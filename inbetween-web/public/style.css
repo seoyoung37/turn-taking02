@@ -1,13 +1,13 @@
 :root {
-  --bg: #ffffff;
+  --bg: #ecece9;
   --panel: #f4f4f1;
   --text: #111111;
   --muted: #707070;
   --line: #d8d7d1;
   --accent: #e1a43a;
-  /*--shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.07);
+  --shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.07);
   --shadow-card: 0 10px 24px rgba(0, 0, 0, 0.08);
-  --shadow-toolbar: 0 12px 22px rgba(0, 0, 0, 0.06);*/
+  --shadow-toolbar: 0 12px 22px rgba(0, 0, 0, 0.06);
 }
 
 * {
@@ -80,7 +80,7 @@ body {
   overflow: hidden;
   background: #d5d5d0;
 
-  /* 기본 상태에서는 노란 테두리 안 보이게 */
+  /* 기본 상태에서는 노란 테두리 없음 */
   border: 2px solid transparent;
 
   box-shadow: var(--shadow-card);
@@ -131,24 +131,30 @@ body {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
+/* ---------- smaller cue dots ---------- */
+
 .tile .cue {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: 10px;
+  bottom: 10px;
+
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 10px;
+  gap: 4px;
+
+  padding: 4px 6px;
   border-radius: 999px;
+
   background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(8px);
 }
 
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, 0.62);
+
   transition:
     transform 180ms ease,
     opacity 180ms ease,
@@ -158,8 +164,8 @@ body {
 
 .dot.active {
   background: #ffffff;
-  transform: scale(1.1);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
+  transform: scale(1.18);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
 }
 
 .stage.grid-mode .tile {
@@ -204,12 +210,12 @@ body {
   opacity: 1;
 }
 
-/* speaker에게만 노란 테두리 */
+/* speaker에게만 노란 stroke 하나만 적용 */
 .tile.speaker {
   border-color: var(--accent);
-  box-shadow:
-    0 0 0 4px rgba(225, 164, 58, 0.16),
-    0 20px 40px rgba(0, 0, 0, 0.12);
+
+  /* speaker 전용 glow / shadow 제거 */
+  box-shadow: none;
 }
 
 .tile.muted {
@@ -234,9 +240,9 @@ body {
 
 .stage.circle-mode .tile.speaker {
   border-color: var(--accent);
-  box-shadow:
-    0 0 0 4px rgba(225, 164, 58, 0.16),
-    0 16px 32px rgba(0, 0, 0, 0.12);
+
+  /* circle mode에서도 speaker glow / shadow 제거 */
+  box-shadow: none;
 }
 
 .stage.circle-mode .tile .name {
