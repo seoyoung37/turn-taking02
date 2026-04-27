@@ -118,11 +118,11 @@ body {
   left: 12px;
   bottom: 12px;
   max-width: 72%;
-  padding: 7px 12px;
+  padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.95);
   color: #161616;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -250,8 +250,8 @@ body {
   bottom: 10px;
   transform: translateX(-50%);
   max-width: 76%;
-  font-size: 11px;
-  padding: 6px 10px;
+  font-size: 8px;
+  padding: 4px 7px;
   text-align: center;
 }
 
