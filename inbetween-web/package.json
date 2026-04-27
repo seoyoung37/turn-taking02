@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "express": "^4.18.3",
-    "socket.io": "^4.7.5"
+    "livekit-server-sdk: "2.15.2"
   }
 }
