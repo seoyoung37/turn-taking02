@@ -1105,7 +1105,7 @@ function applyCircleLayout() {
   stage.style.gridTemplateColumns = "";
   stage.style.gridTemplateRows = "";
 
-  orbitAngle += 0.0025;
+  orbitAngle += 0.005;
 
   const users = Array.from(participants.values());
   const count = users.length;
