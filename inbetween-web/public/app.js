@@ -1,7 +1,14 @@
+const {
+  Room,
+  RoomEvent,
+  Track,
+  VideoPresets,
+} = window.LivekitClient;
+
 let FaceLandmarker;
 let FilesetResolver;
 
-console.log("app.js loaded");
+console.log("app.js loaded - LiveKit version");
 
 const stage = document.getElementById("stage");
 const roomInput = document.getElementById("roomInput");
@@ -24,19 +31,17 @@ let displayName =
 
 localStorage.setItem("inbetween-name", displayName);
 
-const socket = io();
+const clientIdentity = `${displayName}-${crypto.randomUUID().slice(0, 8)}`;
 
+let lkRoom = null;
 let myId = null;
-let localStream = null;
 let localVideoEl = null;
 
 const participants = new Map();
 
-const peers = new Map();
-
-let audioContext;
-let analyser;
-let audioData;
+let audioContext = null;
+let analyser = null;
+let audioData = null;
 
 let faceLandmarker = null;
 let faceScaleBaseline = null;
@@ -52,7 +57,6 @@ let orbitAngle = 0;
 
 let lastStateSentAt = 0;
 let lastSpeakingTick = Date.now();
-let hasJoinedRoom = false;
 
 const SPEECH_START_THRESHOLD = 0.018;
 const SPEECH_STOP_THRESHOLD = 0.01;
@@ -69,6 +73,8 @@ const LEAN_FORWARD_SCALE = 1.12;
 let speechCandidateSince = null;
 let silenceCandidateSince = null;
 
+const STATE_TOPIC = "inbetween-state";
+
 const localState = {
   muted: false,
   cameraOff: false,
@@ -80,36 +86,11 @@ const localState = {
   speakingMs: 0,
 };
 
-let ICE_SERVERS = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-];
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 registerMediaUnlock();
 init();
-
-async function loadIceServers() {
-  try {
-    const response = await fetch("/config");
-
-    if (!response.ok) {
-      throw new Error(`Config request failed: ${response.status}`);
-    }
-
-    const config = await response.json();
-
-    if (Array.isArray(config.iceServers) && config.iceServers.length > 0) {
-      ICE_SERVERS = config.iceServers;
-    }
-
-    console.log("ICE servers loaded:", ICE_SERVERS);
-  } catch (error) {
-    console.warn(
-      "Failed to load /config. Using default STUN servers only.",
-      error
-    );
-  }
-}
 
 function registerMediaUnlock() {
   const unlock = () => {
@@ -120,8 +101,15 @@ function registerMediaUnlock() {
     }
 
     participants.forEach((participant) => {
-      tryPlayVideo(participant.video);
+      tryPlayMedia(participant.video);
+      tryPlayMedia(participant.audio);
     });
+
+    if (lkRoom && lkRoom.startAudio) {
+      lkRoom.startAudio().catch((error) => {
+        console.warn("LiveKit startAudio failed:", error);
+      });
+    }
   };
 
   document.addEventListener("click", unlock);
@@ -129,154 +117,451 @@ function registerMediaUnlock() {
   document.addEventListener("keydown", unlock);
 }
 
-function tryPlayVideo(video) {
-  if (!video) return;
+function tryPlayMedia(element) {
+  if (!element) return;
 
-  const promise = video.play();
+  const promise = element.play?.();
 
   if (promise && typeof promise.catch === "function") {
     promise.catch((error) => {
-      console.warn("video play blocked or delayed:", error);
+      console.warn("media play blocked or delayed:", error);
     });
   }
-}
-
-function joinRoom() {
-  if (!socket.connected) return;
-  if (hasJoinedRoom) return;
-
-  hasJoinedRoom = true;
-
-  console.log("joining room", roomId);
-
-  socket.emit("join-room", {
-    roomId,
-    name: displayName,
-  });
 }
 
 async function init() {
   console.log("init started");
 
   try {
-    await loadIceServers();
-    await startLocalMedia();
-
-    console.log("local media ready", localStream);
-
     setupButtons();
 
-    socket.on("connect", () => {
-      console.log("socket connected", socket.id);
-      joinRoom();
+    const tokenInfo = await fetchToken();
+
+    lkRoom = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      videoCaptureDefaults: {
+        resolution: VideoPresets.h720.resolution,
+      },
     });
 
-    socket.on("disconnect", () => {
-      console.log("socket disconnected");
-      hasJoinedRoom = false;
+    setupLiveKitEvents();
+
+    console.log("connecting to LiveKit:", tokenInfo.url);
+
+    await lkRoom.connect(tokenInfo.url, tokenInfo.token, {
+      autoSubscribe: true,
     });
 
-    socket.on("joined", async ({ id, users }) => {
-      console.log("joined room", id, users);
-      myId = id;
+    console.log("connected to LiveKit room:", lkRoom.name);
 
-      addParticipant({
-        id: myId,
-        name: displayName,
-        stream: localStream,
-        state: localState,
-        isLocal: true,
+    myId = lkRoom.localParticipant.identity;
+
+    addParticipant({
+      id: myId,
+      name: displayName,
+      isLocal: true,
+    });
+
+    await lkRoom.localParticipant.setCameraEnabled(true);
+    await lkRoom.localParticipant.setMicrophoneEnabled(true);
+
+    localState.muted = false;
+    localState.cameraOff = false;
+
+    attachLocalMediaTracks();
+    setupAudioAnalyzer();
+    setupFaceLandmarker()
+      .then(() => {
+        console.log("FaceLandmarker ready");
+      })
+      .catch((error) => {
+        console.error("FaceLandmarker failed:", error);
       });
 
-      for (const user of users) {
-        addParticipant({
-          id: user.id,
-          name: user.name,
-          stream: new MediaStream(),
-          state: user.state,
-          isLocal: false,
-        });
-
-        await createOffer(user.id);
-      }
-
-      setupAudioAnalyzer();
-
-      setupFaceLandmarker()
-        .then(() => {
-          console.log("FaceLandmarker ready");
-        })
-        .catch((error) => {
-          console.error("FaceLandmarker failed:", error);
-        });
-
-      requestAnimationFrame(loop);
+    lkRoom.remoteParticipants.forEach((participant) => {
+      addLiveKitParticipant(participant);
+      attachExistingTracks(participant);
     });
 
-    socket.on("user-joined", ({ id, name, state }) => {
-      console.log("user joined:", id, name);
+    sendStateNow();
 
-      addParticipant({
-        id,
-        name,
-        stream: new MediaStream(),
-        state,
-        isLocal: false,
-      });
-    });
-
-    socket.on("user-left", ({ id }) => {
-      console.log("user left:", id);
-      removeParticipant(id);
-    });
-
-    socket.on("user-state", ({ id, state }) => {
-      const participant = participants.get(id);
-      if (!participant) return;
-
-      participant.state = {
-        ...participant.state,
-        ...state,
-      };
-    });
-
-    socket.on("signal", handleSignal);
-
-    if (socket.connected) {
-      joinRoom();
-    }
+    requestAnimationFrame(loop);
   } catch (error) {
-    console.error("Camera/Mic error:", error);
-
+    console.error("LiveKit init error:", error);
     alert(
-      "Camera and microphone permission is needed. Please allow access and refresh."
+      "Failed to join the LiveKit room. Check LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET in Railway Variables."
     );
   }
 }
 
-async function startLocalMedia() {
-  localStream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      facingMode: "user",
-    },
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+async function fetchToken() {
+  const params = new URLSearchParams({
+    room: roomId,
+    name: displayName,
+    identity: clientIdentity,
+  });
+
+  const response = await fetch(`/token?${params.toString()}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText);
+  }
+
+  return response.json();
+}
+
+function setupLiveKitEvents() {
+  lkRoom
+    .on(RoomEvent.ParticipantConnected, (participant) => {
+      console.log("participant connected:", participant.identity);
+      addLiveKitParticipant(participant);
+      applyLayout();
+    })
+    .on(RoomEvent.ParticipantDisconnected, (participant) => {
+      console.log("participant disconnected:", participant.identity);
+      removeParticipant(participant.identity);
+      applyLayout();
+    })
+    .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      console.log(
+        "track subscribed:",
+        participant.identity,
+        track.kind,
+        publication.source
+      );
+
+      addLiveKitParticipant(participant);
+      attachRemoteTrack(track, publication, participant);
+    })
+    .on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+      console.log(
+        "track unsubscribed:",
+        participant.identity,
+        track.kind,
+        publication.source
+      );
+
+      detachRemoteTrack(track, publication, participant);
+    })
+    .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+      handleActiveSpeakersChanged(speakers);
+    })
+    .on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+      handleDataReceived(payload, participant, topic);
+    })
+    .on(RoomEvent.Disconnected, () => {
+      console.log("LiveKit room disconnected");
+    })
+    .on(RoomEvent.MediaDevicesError, (error) => {
+      console.error("LiveKit media device error:", error);
+    });
+}
+
+function addLiveKitParticipant(livekitParticipant) {
+  const id = livekitParticipant.identity;
+  const name = livekitParticipant.name || id;
+
+  addParticipant({
+    id,
+    name,
+    isLocal: false,
+  });
+}
+
+function addParticipant({ id, name, isLocal }) {
+  if (participants.has(id)) return;
+
+  const tile = document.createElement("section");
+  tile.className = "tile";
+
+  if (isLocal) {
+    tile.classList.add("local");
+  }
+
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = true;
+  video.volume = 0;
+
+  const audio = document.createElement("audio");
+  audio.autoplay = true;
+  audio.playsInline = true;
+  audio.style.display = "none";
+
+  if (isLocal) {
+    localVideoEl = video;
+  }
+
+  const nameTag = document.createElement("div");
+  nameTag.className = "name";
+  nameTag.textContent = isLocal ? `${name} / You` : name;
+
+  const cue = document.createElement("div");
+  cue.className = "cue";
+  cue.innerHTML = `
+    <span class="dot lip-dot" title="Lip parting"></span>
+    <span class="dot lean-dot" title="Leaning forward"></span>
+    <span class="dot gaze-dot" title="Gazing at speaker"></span>
+  `;
+
+  tile.appendChild(video);
+  tile.appendChild(audio);
+  tile.appendChild(nameTag);
+  tile.appendChild(cue);
+
+  stage.appendChild(tile);
+
+  participants.set(id, {
+    id,
+    name,
+    tile,
+    video,
+    audio,
+    isLocal,
+    state: {
+      muted: false,
+      cameraOff: false,
+      isSpeaking: false,
+      volume: 0,
+      lipOpen: false,
+      leaning: false,
+      gazingSpeaker: false,
+      speakingMs: 0,
     },
   });
+
+  tryPlayMedia(video);
+  tryPlayMedia(audio);
+}
+
+function removeParticipant(id) {
+  const participant = participants.get(id);
+
+  if (participant) {
+    participant.tile.remove();
+    participants.delete(id);
+  }
+
+  if (activeSpeakerId === id) {
+    activeSpeakerId = null;
+  }
+
+  if (heldSpeakerId === id) {
+    heldSpeakerId = null;
+  }
+}
+
+function attachLocalMediaTracks() {
+  if (!lkRoom || !localVideoEl) return;
+
+  const cameraTrack = findParticipantTrack(
+    lkRoom.localParticipant,
+    Track.Source.Camera
+  );
+
+  if (cameraTrack) {
+    cameraTrack.attach(localVideoEl);
+    tryPlayMedia(localVideoEl);
+  }
+}
+
+function setupAudioAnalyzer() {
+  if (!lkRoom) return;
+
+  const micTrack = findParticipantTrack(
+    lkRoom.localParticipant,
+    Track.Source.Microphone
+  );
+
+  const mediaStreamTrack = getMediaStreamTrack(micTrack);
+
+  if (!mediaStreamTrack) {
+    console.warn("No local microphone MediaStreamTrack found.");
+    return;
+  }
+
+  audioContext = new AudioContext();
+
+  const stream = new MediaStream([mediaStreamTrack]);
+  const source = audioContext.createMediaStreamSource(stream);
+
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 512;
+
+  audioData = new Uint8Array(analyser.fftSize);
+
+  source.connect(analyser);
+}
+
+function findParticipantTrack(participant, source) {
+  if (!participant) return null;
+
+  if (typeof participant.getTrackPublication === "function") {
+    const publication = participant.getTrackPublication(source);
+    const track =
+      publication?.track ||
+      publication?.videoTrack ||
+      publication?.audioTrack ||
+      null;
+
+    if (track) return track;
+  }
+
+  const publications =
+    participant.trackPublications ||
+    participant.videoTrackPublications ||
+    participant.audioTrackPublications;
+
+  if (publications && typeof publications.values === "function") {
+    for (const publication of publications.values()) {
+      if (publication.source === source) {
+        return (
+          publication.track ||
+          publication.videoTrack ||
+          publication.audioTrack ||
+          null
+        );
+      }
+    }
+  }
+
+  return null;
+}
+
+function getMediaStreamTrack(livekitTrack) {
+  return (
+    livekitTrack?.mediaStreamTrack ||
+    livekitTrack?.mediaStreamTrack ||
+    livekitTrack?._mediaStreamTrack ||
+    null
+  );
+}
+
+function attachExistingTracks(livekitParticipant) {
+  const publications = livekitParticipant.trackPublications;
+
+  if (!publications || typeof publications.values !== "function") return;
+
+  for (const publication of publications.values()) {
+    const track =
+      publication.track ||
+      publication.videoTrack ||
+      publication.audioTrack ||
+      null;
+
+    if (track && publication.isSubscribed) {
+      attachRemoteTrack(track, publication, livekitParticipant);
+    }
+  }
+}
+
+function attachRemoteTrack(track, publication, livekitParticipant) {
+  const id = livekitParticipant.identity;
+  const participant = participants.get(id);
+
+  if (!participant) return;
+
+  if (track.kind === Track.Kind.Video) {
+    track.attach(participant.video);
+    participant.video.muted = true;
+    participant.video.volume = 0;
+    participant.video.dataset.livekitVideo = publication.trackSid || "camera";
+    tryPlayMedia(participant.video);
+  }
+
+  if (track.kind === Track.Kind.Audio) {
+    track.attach(participant.audio);
+    participant.audio.muted = false;
+    participant.audio.volume = 1;
+    participant.audio.dataset.livekitAudio = publication.trackSid || "mic";
+    tryPlayMedia(participant.audio);
+  }
+}
+
+function detachRemoteTrack(track, publication, livekitParticipant) {
+  const id = livekitParticipant.identity;
+  const participant = participants.get(id);
+
+  if (!participant) return;
+
+  if (track.kind === Track.Kind.Video) {
+    track.detach(participant.video);
+    participant.video.srcObject = null;
+  }
+
+  if (track.kind === Track.Kind.Audio) {
+    track.detach(participant.audio);
+    participant.audio.srcObject = null;
+  }
+}
+
+function handleActiveSpeakersChanged(speakers) {
+  const now = Date.now();
+  const speakerIds = new Set(speakers.map((speaker) => speaker.identity));
+
+  participants.forEach((participant) => {
+    const livekitParticipant =
+      participant.id === myId
+        ? lkRoom.localParticipant
+        : lkRoom.remoteParticipants.get(participant.id);
+
+    const isSpeaking = speakerIds.has(participant.id);
+    const audioLevel = livekitParticipant?.audioLevel || 0;
+
+    participant.state.isSpeaking = isSpeaking;
+    participant.state.volume = audioLevel;
+
+    if (isSpeaking) {
+      participant.state.speakingMs += 100;
+    }
+  });
+
+  const primarySpeaker = speakers.find((speaker) =>
+    participants.has(speaker.identity)
+  );
+
+  if (primarySpeaker) {
+    activeSpeakerId = primarySpeaker.identity;
+    heldSpeakerId = primarySpeaker.identity;
+    lastAnySpeakerAt = now;
+    noSpeakerMode = false;
+  }
+}
+
+function handleDataReceived(payload, livekitParticipant, topic) {
+  if (topic !== STATE_TOPIC) return;
+  if (!livekitParticipant) return;
+
+  try {
+    const message = JSON.parse(decoder.decode(payload));
+
+    if (message.type !== "state") return;
+
+    const participant = participants.get(livekitParticipant.identity);
+    if (!participant) return;
+
+    participant.state = {
+      ...participant.state,
+      ...message.state,
+    };
+  } catch (error) {
+    console.warn("Failed to parse state message:", error);
+  }
 }
 
 function setupButtons() {
   if (muteBtn) {
-    muteBtn.addEventListener("click", () => {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (!audioTrack) return;
+    muteBtn.addEventListener("click", async () => {
+      if (!lkRoom) return;
 
-      audioTrack.enabled = !audioTrack.enabled;
-      localState.muted = !audioTrack.enabled;
+      const nextMuted = !localState.muted;
+
+      await lkRoom.localParticipant.setMicrophoneEnabled(!nextMuted);
+
+      localState.muted = nextMuted;
 
       if (localState.muted) {
         localState.isSpeaking = false;
@@ -293,12 +578,18 @@ function setupButtons() {
   }
 
   if (cameraBtn) {
-    cameraBtn.addEventListener("click", () => {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (!videoTrack) return;
+    cameraBtn.addEventListener("click", async () => {
+      if (!lkRoom) return;
 
-      videoTrack.enabled = !videoTrack.enabled;
-      localState.cameraOff = !videoTrack.enabled;
+      const nextCameraOff = !localState.cameraOff;
+
+      await lkRoom.localParticipant.setCameraEnabled(!nextCameraOff);
+
+      localState.cameraOff = nextCameraOff;
+
+      if (!localState.cameraOff) {
+        attachLocalMediaTracks();
+      }
 
       cameraBtn.textContent = localState.cameraOff ? "Camera On" : "Camera Off";
       cameraBtn.classList.toggle("secondary", localState.cameraOff);
@@ -371,324 +662,6 @@ async function setupFaceLandmarker() {
   });
 }
 
-function setupAudioAnalyzer() {
-  audioContext = new AudioContext();
-
-  const source = audioContext.createMediaStreamSource(localStream);
-
-  analyser = audioContext.createAnalyser();
-  analyser.fftSize = 512;
-
-  audioData = new Uint8Array(analyser.fftSize);
-
-  source.connect(analyser);
-}
-
-function addParticipant({ id, name, stream, state, isLocal }) {
-  if (participants.has(id)) return;
-
-  const tile = document.createElement("section");
-  tile.className = "tile";
-
-  if (isLocal) {
-    tile.classList.add("local");
-  }
-
-  const video = document.createElement("video");
-  video.autoplay = true;
-  video.playsInline = true;
-  video.muted = Boolean(isLocal);
-  video.volume = isLocal ? 0 : 1;
-
-  const existingPeer = peers.get(id);
-
-  if (!isLocal && existingPeer?.stream) {
-    video.srcObject = existingPeer.stream;
-  } else {
-    video.srcObject = stream;
-  }
-
-  video.addEventListener("loadedmetadata", () => {
-    tryPlayVideo(video);
-  });
-
-  if (isLocal) {
-    localVideoEl = video;
-  }
-
-  const nameTag = document.createElement("div");
-  nameTag.className = "name";
-  nameTag.textContent = isLocal ? `${name} / You` : name;
-
-  const cue = document.createElement("div");
-  cue.className = "cue";
-  cue.innerHTML = `
-    <span class="dot lip-dot" title="Lip parting"></span>
-    <span class="dot lean-dot" title="Leaning forward"></span>
-    <span class="dot gaze-dot" title="Gazing at speaker"></span>
-  `;
-
-  tile.appendChild(video);
-  tile.appendChild(nameTag);
-  tile.appendChild(cue);
-
-  stage.appendChild(tile);
-
-  participants.set(id, {
-    id,
-    name,
-    stream: video.srcObject || stream,
-    tile,
-    video,
-    state: {
-      muted: false,
-      cameraOff: false,
-      isSpeaking: false,
-      volume: 0,
-      lipOpen: false,
-      leaning: false,
-      gazingSpeaker: false,
-      speakingMs: 0,
-      ...state,
-    },
-    isLocal,
-  });
-
-  tryPlayVideo(video);
-}
-
-function removeParticipant(id) {
-  const participant = participants.get(id);
-
-  if (participant) {
-    participant.tile.remove();
-    participants.delete(id);
-  }
-
-  const peer = peers.get(id);
-
-  if (peer) {
-    peer.pc.close();
-    peers.delete(id);
-  }
-
-  if (activeSpeakerId === id) {
-    activeSpeakerId = null;
-  }
-
-  if (heldSpeakerId === id) {
-    heldSpeakerId = null;
-  }
-}
-
-async function createOffer(remoteId) {
-  const pc = ensurePeer(remoteId);
-
-  try {
-    const offer = await pc.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true,
-    });
-
-    await pc.setLocalDescription(offer);
-
-    socket.emit("signal", {
-      to: remoteId,
-      type: "offer",
-      sdp: pc.localDescription,
-    });
-
-    console.log("offer sent to:", remoteId);
-  } catch (error) {
-    console.error("createOffer failed:", remoteId, error);
-  }
-}
-
-function ensurePeer(remoteId) {
-  if (peers.has(remoteId)) {
-    return peers.get(remoteId).pc;
-  }
-
-  const pc = new RTCPeerConnection({
-    iceServers: ICE_SERVERS,
-  });
-
-  const remoteStream = new MediaStream();
-
-  peers.set(remoteId, {
-    pc,
-    stream: remoteStream,
-    pendingCandidates: [],
-  });
-
-  console.log("peer created:", remoteId, ICE_SERVERS);
-
-  if (localStream) {
-    localStream.getTracks().forEach((track) => {
-      pc.addTrack(track, localStream);
-    });
-  }
-
-  pc.onconnectionstatechange = () => {
-    console.log("peer connection state:", remoteId, pc.connectionState);
-  };
-
-  pc.oniceconnectionstatechange = () => {
-    console.log("ice connection state:", remoteId, pc.iceConnectionState);
-  };
-
-  pc.onsignalingstatechange = () => {
-    console.log("signaling state:", remoteId, pc.signalingState);
-  };
-
-  pc.onicecandidateerror = (event) => {
-    console.warn("ICE candidate error:", {
-      remoteId,
-      url: event.url,
-      errorCode: event.errorCode,
-      errorText: event.errorText,
-    });
-  };
-
-  pc.ontrack = (event) => {
-    const incomingTracks =
-      event.streams && event.streams[0]
-        ? event.streams[0].getTracks()
-        : [event.track].filter(Boolean);
-
-    incomingTracks.forEach((track) => {
-      const alreadyAdded = remoteStream
-        .getTracks()
-        .some((existingTrack) => existingTrack.id === track.id);
-
-      if (!alreadyAdded) {
-        remoteStream.addTrack(track);
-      }
-    });
-
-    const participant = participants.get(remoteId);
-
-    if (participant) {
-      participant.stream = remoteStream;
-      participant.video.srcObject = remoteStream;
-
-      tryPlayVideo(participant.video);
-    }
-
-    console.log(
-      "remote track received from:",
-      remoteId,
-      remoteStream.getTracks().map((track) => ({
-        kind: track.kind,
-        id: track.id,
-        enabled: track.enabled,
-        readyState: track.readyState,
-      }))
-    );
-  };
-
-  pc.onicecandidate = (event) => {
-    if (!event.candidate) {
-      console.log("ICE gathering complete for:", remoteId);
-      return;
-    }
-
-    socket.emit("signal", {
-      to: remoteId,
-      type: "ice",
-      candidate: event.candidate,
-    });
-  };
-
-  return pc;
-}
-
-async function handleSignal({ from, type, sdp, candidate }) {
-  const pc = ensurePeer(from);
-
-  try {
-    if (type === "offer") {
-      console.log("offer received from:", from);
-
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      await flushPendingIceCandidates(from);
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socket.emit("signal", {
-        to: from,
-        type: "answer",
-        sdp: pc.localDescription,
-      });
-
-      console.log("answer sent to:", from);
-      return;
-    }
-
-    if (type === "answer") {
-      console.log("answer received from:", from);
-
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      await flushPendingIceCandidates(from);
-
-      return;
-    }
-
-    if (type === "ice" && candidate) {
-      await addIceCandidateSafely(from, candidate);
-      return;
-    }
-  } catch (error) {
-    console.error("handleSignal error:", {
-      from,
-      type,
-      error,
-    });
-  }
-}
-
-async function addIceCandidateSafely(remoteId, candidate) {
-  const peer = peers.get(remoteId);
-  if (!peer) return;
-
-  const pc = peer.pc;
-  const iceCandidate = new RTCIceCandidate(candidate);
-
-  if (pc.remoteDescription && pc.remoteDescription.type) {
-    try {
-      await pc.addIceCandidate(iceCandidate);
-    } catch (error) {
-      console.warn("addIceCandidate failed:", remoteId, error);
-    }
-  } else {
-    peer.pendingCandidates.push(iceCandidate);
-    console.log("ICE candidate queued:", remoteId);
-  }
-}
-
-async function flushPendingIceCandidates(remoteId) {
-  const peer = peers.get(remoteId);
-  if (!peer) return;
-
-  const pc = peer.pc;
-
-  if (!pc.remoteDescription || !pc.remoteDescription.type) {
-    return;
-  }
-
-  while (peer.pendingCandidates.length > 0) {
-    const candidate = peer.pendingCandidates.shift();
-
-    try {
-      await pc.addIceCandidate(candidate);
-      console.log("queued ICE candidate added:", remoteId);
-    } catch (error) {
-      console.warn("queued ICE candidate failed:", remoteId, error);
-    }
-  }
-}
-
 function loop() {
   analyzeLocalAudio();
   analyzeLocalFace();
@@ -727,10 +700,6 @@ function analyzeLocalAudio() {
   lastSpeakingTick = now;
 
   localState.volume = rms;
-
-  if (rms > 0.01) {
-    console.log("mic rms:", rms, "isSpeaking:", localState.isSpeaking);
-  }
 
   if (!localState.isSpeaking) {
     if (rms > SPEECH_START_THRESHOLD) {
@@ -917,7 +886,6 @@ function updateConversationState() {
     lastAnySpeakerAt = now;
     noSpeakerMode = false;
 
-    console.log("speaker detected:", bestSpeaker, "volume:", bestVolume);
     return;
   }
 
@@ -1122,11 +1090,7 @@ function applyCircleLayout() {
       Math.min(maxOuterRadius, 210)
     );
 
-    const innerRadius = clamp(
-      outerRadius * 0.48,
-      58,
-      outerRadius - 66
-    );
+    const innerRadius = clamp(outerRadius * 0.48, 58, outerRadius - 66);
 
     const preset = getLowCountAngles(count);
 
@@ -1173,11 +1137,7 @@ function applyCircleLayout() {
     Math.min(maxOuterRadius, 250)
   );
 
-  const innerRadius = clamp(
-    outerRadius * 0.55,
-    62,
-    outerRadius - 58
-  );
+  const innerRadius = clamp(outerRadius * 0.55, 62, outerRadius - 58);
 
   positionCircleRing({
     users: outerUsers,
@@ -1341,7 +1301,7 @@ function updateGazePullDirection(participant) {
 function maybeSendState() {
   const now = Date.now();
 
-  if (now - lastStateSentAt < 100) return;
+  if (now - lastStateSentAt < 120) return;
 
   lastStateSentAt = now;
 
@@ -1349,22 +1309,29 @@ function maybeSendState() {
 }
 
 function sendStateNow() {
-  socket.emit("user-state", {
-    muted: localState.muted,
-    cameraOff: localState.cameraOff,
-    isSpeaking: localState.isSpeaking,
-    volume: localState.volume,
-    lipOpen: localState.lipOpen,
-    leaning: localState.leaning,
-    gazingSpeaker: localState.gazingSpeaker,
-    speakingMs: localState.speakingMs,
-  });
+  if (!lkRoom || !lkRoom.localParticipant) return;
 
-  if (myId && participants.has(myId)) {
-    participants.get(myId).state = {
-      ...participants.get(myId).state,
+  const participant = participants.get(myId);
+
+  if (participant) {
+    participant.state = {
+      ...participant.state,
       ...localState,
     };
+  }
+
+  const message = {
+    type: "state",
+    state: localState,
+  };
+
+  try {
+    lkRoom.localParticipant.publishData(encoder.encode(JSON.stringify(message)), {
+      reliable: false,
+      topic: STATE_TOPIC,
+    });
+  } catch (error) {
+    console.warn("publishData failed:", error);
   }
 }
 
