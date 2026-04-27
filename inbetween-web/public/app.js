@@ -32,14 +32,6 @@ let localVideoEl = null;
 
 const participants = new Map();
 
-/*
-  peers:
-  remoteId -> {
-    pc,
-    stream,
-    pendingCandidates
-  }
-*/
 const peers = new Map();
 
 let audioContext;
@@ -88,11 +80,6 @@ const localState = {
   speakingMs: 0,
 };
 
-/*
-  기본은 STUN만 사용.
-  server.js에 /config를 추가하고 TURN 환경변수를 넣으면,
-  여기서 자동으로 TURN까지 받아오게 됨.
-*/
 let ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -201,9 +188,6 @@ async function init() {
         isLocal: true,
       });
 
-      /*
-        새로 들어온 사람만 기존 유저들에게 offer를 보냄.
-      */
       for (const user of users) {
         addParticipant({
           id: user.id,
@@ -416,11 +400,6 @@ function addParticipant({ id, name, stream, state, isLocal }) {
   video.muted = Boolean(isLocal);
   video.volume = isLocal ? 0 : 1;
 
-  /*
-    중요:
-    ontrack이 먼저 도착해서 peer stream이 이미 만들어졌을 수도 있으므로,
-    기존 peer stream이 있으면 그걸 우선 연결.
-  */
   const existingPeer = peers.get(id);
 
   if (!isLocal && existingPeer?.stream) {
@@ -551,27 +530,15 @@ function ensurePeer(remoteId) {
   }
 
   pc.onconnectionstatechange = () => {
-    console.log(
-      "peer connection state:",
-      remoteId,
-      pc.connectionState
-    );
+    console.log("peer connection state:", remoteId, pc.connectionState);
   };
 
   pc.oniceconnectionstatechange = () => {
-    console.log(
-      "ice connection state:",
-      remoteId,
-      pc.iceConnectionState
-    );
+    console.log("ice connection state:", remoteId, pc.iceConnectionState);
   };
 
   pc.onsignalingstatechange = () => {
-    console.log(
-      "signaling state:",
-      remoteId,
-      pc.signalingState
-    );
+    console.log("signaling state:", remoteId, pc.signalingState);
   };
 
   pc.onicecandidateerror = (event) => {
@@ -688,12 +655,6 @@ async function addIceCandidateSafely(remoteId, candidate) {
   const pc = peer.pc;
   const iceCandidate = new RTCIceCandidate(candidate);
 
-  /*
-    중요:
-    remoteDescription이 설정되기 전에 ICE가 먼저 오면
-    바로 addIceCandidate 하면 실패할 수 있음.
-    그래서 pendingCandidates에 넣었다가 remoteDescription 후 flush.
-  */
   if (pc.remoteDescription && pc.remoteDescription.type) {
     try {
       await pc.addIceCandidate(iceCandidate);
@@ -1061,29 +1022,51 @@ function getTileMaxWidth(count) {
 function getCircleBaseTileWidth(count, usableWidth, usableHeight) {
   let base;
 
-  if (count <= 3) base = 138;
-  else if (count <= 5) base = 122;
-  else if (count <= 8) base = 104;
-  else if (count <= 12) base = 88;
-  else if (count <= 16) base = 76;
-  else if (count <= 20) base = 66;
-  else base = 58;
+  if (count <= 2) base = 130;
+  else if (count <= 3) base = 118;
+  else if (count <= 5) base = 110;
+  else if (count <= 8) base = 96;
+  else if (count <= 12) base = 84;
+  else if (count <= 16) base = 72;
+  else if (count <= 20) base = 64;
+  else base = 56;
 
-  const viewportLimit = Math.min(usableWidth / 5.8, usableHeight / 4.8);
+  const viewportLimit = Math.min(usableWidth / 5.2, usableHeight / 4.5);
   return Math.min(base, viewportLimit);
 }
 
 function getCircleGap(count) {
-  if (count <= 4) return 12;
-  if (count <= 8) return 10;
-  if (count <= 12) return 8;
-  return 6;
+  if (count <= 3) return 38;
+  if (count <= 5) return 30;
+  if (count <= 8) return 20;
+  if (count <= 12) return 12;
+  return 8;
 }
 
 function getTightRadius(count, tileW, gap) {
   if (count <= 1) return 0;
 
   return (tileW + gap) / (2 * Math.sin(Math.PI / count));
+}
+
+function getLowCountAngles(total) {
+  const top = -Math.PI / 2;
+
+  if (total === 2) {
+    return {
+      outer: [top],
+      inner: [top + Math.PI],
+    };
+  }
+
+  if (total === 3) {
+    return {
+      outer: [top - Math.PI / 3, top + Math.PI / 3],
+      inner: [top + Math.PI],
+    };
+  }
+
+  return null;
 }
 
 function applyCircleLayout() {
@@ -1117,27 +1100,84 @@ function applyCircleLayout() {
   );
 
   const outerCount = Math.ceil(count / 2);
-  const outerIds = new Set(ranked.slice(0, outerCount).map((p) => p.id));
-
-  const outerUsers = users.filter((p) => outerIds.has(p.id));
-  const innerUsers = users.filter((p) => !outerIds.has(p.id));
+  const outerUsers = ranked.slice(0, outerCount);
+  const innerUsers = ranked.slice(outerCount);
 
   const baseTileW = getCircleBaseTileWidth(count, usableWidth, usableHeight);
 
-  const outerTileW = clamp(baseTileW, 54, 120);
-  const innerTileW = clamp(baseTileW * 0.88, 48, 105);
+  if (count === 2 || count === 3) {
+    const outerTileW = clamp(baseTileW, 86, 132);
+    const innerTileW = clamp(baseTileW * 0.86, 72, 112);
+
+    const outerTileH = outerTileW * 0.5625;
+
+    const maxOuterRadius = Math.min(
+      usableWidth / 2 - outerTileW / 2 - 24,
+      usableHeight / 2 - outerTileH / 2 - 24
+    );
+
+    const outerRadius = clamp(
+      Math.min(usableWidth, usableHeight) * 0.2,
+      126,
+      Math.min(maxOuterRadius, 210)
+    );
+
+    const innerRadius = clamp(
+      outerRadius * 0.48,
+      58,
+      outerRadius - 66
+    );
+
+    const preset = getLowCountAngles(count);
+
+    positionCircleRing({
+      users: outerUsers,
+      centerX,
+      centerY,
+      radius: outerRadius,
+      tileW: outerTileW,
+      startAngle: orbitAngle,
+      ringClass: "outer-ring",
+      rotateTiles: true,
+      angleList: preset.outer.map((angle) => angle + orbitAngle),
+    });
+
+    positionCircleRing({
+      users: innerUsers,
+      centerX,
+      centerY,
+      radius: innerRadius,
+      tileW: innerTileW,
+      startAngle: orbitAngle,
+      ringClass: "inner-ring",
+      rotateTiles: true,
+      angleList: preset.inner.map((angle) => angle + orbitAngle),
+    });
+
+    return;
+  }
+
+  const outerTileW = clamp(baseTileW, 54, 116);
+  const innerTileW = clamp(baseTileW * 0.82, 44, 94);
 
   const outerTileH = outerTileW * 0.5625;
 
-  const maxRadius = Math.min(
+  const maxOuterRadius = Math.min(
     usableWidth / 2 - outerTileW / 2 - 24,
     usableHeight / 2 - outerTileH / 2 - 24
   );
 
-  const baseRadius = getTightRadius(count, outerTileW, getCircleGap(count));
+  const outerRadius = clamp(
+    getTightRadius(outerUsers.length, outerTileW, getCircleGap(count)),
+    128,
+    Math.min(maxOuterRadius, 250)
+  );
 
-  const outerRadius = clamp(baseRadius, 95, Math.min(maxRadius, 220));
-  const innerRadius = clamp(outerRadius * 0.58, 54, outerRadius - 42);
+  const innerRadius = clamp(
+    outerRadius * 0.55,
+    62,
+    outerRadius - 58
+  );
 
   positionCircleRing({
     users: outerUsers,
@@ -1174,13 +1214,16 @@ function positionCircleRing({
   startAngle,
   ringClass,
   rotateTiles,
+  angleList = null,
 }) {
   if (!users.length) return;
 
   const tileH = tileW * 0.5625;
 
   users.forEach((participant, index) => {
-    const angle = startAngle + (Math.PI * 2 * index) / users.length;
+    const angle = angleList
+      ? angleList[index]
+      : startAngle + (Math.PI * 2 * index) / users.length;
 
     const x = centerX + Math.cos(angle) * radius - tileW / 2;
     const y = centerY + Math.sin(angle) * radius - tileH / 2;
@@ -1194,7 +1237,7 @@ function positionCircleRing({
     tile.style.height = `${tileH}px`;
     tile.style.minWidth = "0px";
     tile.style.maxWidth = "none";
-    tile.style.zIndex = ringClass === "outer-ring" ? "2" : "3";
+    tile.style.zIndex = ringClass === "inner-ring" ? "3" : "2";
 
     tile.style.transform = rotateTiles
       ? `rotate(${angle + Math.PI / 2}rad)`
@@ -1241,15 +1284,9 @@ function applyVisualStates() {
     } else {
       tile.classList.toggle("speaker", isSpeakerTile);
 
-      tile.classList.toggle(
-        "upright",
-        isSpeakerTile || singleParticipant
-      );
+      tile.classList.toggle("upright", isSpeakerTile || singleParticipant);
 
-      tile.classList.toggle(
-        "flat",
-        !isSpeakerTile && !singleParticipant
-      );
+      tile.classList.toggle("flat", !isSpeakerTile && !singleParticipant);
 
       tile.classList.toggle("mouth-open", isReady);
       tile.classList.toggle("leaning", leaningReady);
