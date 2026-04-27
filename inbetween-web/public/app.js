@@ -1012,6 +1012,7 @@ function resetTileForGrid(tile) {
   tile.style.width = "";
   tile.style.transform = "";
   tile.style.zIndex = "";
+  tile.classList.remove("outer-ring", "inner-ring");
 }
 
 function applyGridLayout(count) {
@@ -1074,6 +1075,11 @@ function applyCircleLayout() {
   stage.style.gridTemplateColumns = "";
   stage.style.gridTemplateRows = "";
 
+  /*
+    원 회전 속도.
+    더 느리게: 0.0008
+    지금보다 빠르게: 0.0016
+  */
   orbitAngle += 0.0011;
 
   const users = Array.from(participants.values());
@@ -1082,9 +1088,9 @@ function applyCircleLayout() {
 
   const rect = stage.getBoundingClientRect();
 
-  const sideSafeArea = 60;
-  const topSafeArea = 56;
-  const bottomSafeArea = 108;
+  const sideSafeArea = 56;
+  const topSafeArea = 52;
+  const bottomSafeArea = 106;
 
   const usableWidth = rect.width - sideSafeArea * 2;
   const usableHeight = rect.height - topSafeArea - bottomSafeArea;
@@ -1111,19 +1117,23 @@ function applyCircleLayout() {
   const innerUsers = ranked.slice(outerCount);
 
   let outerTileW = getCircleTileWidth(count, usableWidth, usableHeight);
-  let innerTileW = outerTileW * 0.82;
+  let innerTileW = outerTileW * 0.84;
 
-  const outerGap = count <= 6 ? 20 : 16;
-  const innerGap = count <= 6 ? 16 : 12;
+  const outerGap = getCircleGap(count);
+  const innerGap = Math.max(4, outerGap - 2);
 
   let outerRadius = 0;
   let innerRadius = 0;
 
   /*
-    두 원이 겹치지 않도록 tile size를 자동 조정
+    촘촘하게 모으되 겹치지 않게 자동 조정.
+    핵심:
+    - 같은 ring 안 gap을 작게 잡음
+    - outer/inner 사이 안전거리를 8px 정도만 둠
+    - 이전 코드의 maxOuterRadius * 0.78 강제 확장을 제거함
   */
-  for (let i = 0; i < 12; i++) {
-    innerTileW = clamp(outerTileW * 0.82, 46, outerTileW * 0.9);
+  for (let i = 0; i < 14; i++) {
+    innerTileW = clamp(outerTileW * 0.84, 44, outerTileW * 0.9);
 
     const maxOuterRadius =
       Math.min(usableWidth, usableHeight) / 2 - outerTileW / 2 - 10;
@@ -1139,29 +1149,43 @@ function applyCircleLayout() {
         ? 0
         : getSafeRingRadius(innerUsers.length, innerTileW, innerGap);
 
-    const minRingSeparation =
-      outerTileW / 2 + innerTileW / 2 + 24;
+    const ringSpacing = getRingSpacing(outerTileW, innerTileW);
 
     const requiredOuterRadius = Math.max(
       outerNeededRadius,
-      innerNeededRadius + minRingSeparation
+      innerNeededRadius + ringSpacing
     );
 
-    if (requiredOuterRadius <= maxOuterRadius || outerTileW <= 54) {
-      outerRadius = Math.min(
-        maxOuterRadius,
-        Math.max(requiredOuterRadius, maxOuterRadius * 0.78)
-      );
+    if (requiredOuterRadius <= maxOuterRadius || outerTileW <= 52) {
+      outerRadius = Math.min(maxOuterRadius, requiredOuterRadius + 2);
 
-      innerRadius =
-        innerUsers.length <= 1
-          ? 0
-          : Math.min(innerNeededRadius, outerRadius - minRingSeparation);
+      if (innerUsers.length <= 1) {
+        innerRadius = 0;
+      } else {
+        innerRadius = Math.min(
+          innerNeededRadius,
+          Math.max(0, outerRadius - ringSpacing)
+        );
+      }
 
       break;
     }
 
-    outerTileW *= 0.92;
+    outerTileW *= 0.93;
+  }
+
+  /*
+    혹시 아주 작은 화면에서 radius 계산이 실패하면 fallback.
+  */
+  if (!Number.isFinite(outerRadius) || outerRadius <= 0) {
+    outerTileW = clamp(outerTileW, 44, 90);
+    innerTileW = clamp(outerTileW * 0.84, 40, outerTileW * 0.9);
+
+    outerRadius = getSafeRingRadius(outerUsers.length, outerTileW, outerGap);
+    innerRadius =
+      innerUsers.length <= 1
+        ? 0
+        : getSafeRingRadius(innerUsers.length, innerTileW, innerGap);
   }
 
   positionCircleRing({
@@ -1203,13 +1227,38 @@ function getCircleTileWidth(count, usableWidth, usableHeight) {
 
   const viewportLimit = Math.min(usableWidth / 5.2, usableHeight / 4.2);
 
-  return clamp(Math.min(base, viewportLimit), 54, 170);
+  return clamp(Math.min(base, viewportLimit), 52, 170);
+}
+
+function getCircleGap(count) {
+  /*
+    같은 ring 안에서 원과 원 사이의 여백.
+    더 모으고 싶으면 여기 숫자를 1~2px씩 더 줄이면 됨.
+  */
+  if (count <= 3) return 12;
+  if (count <= 5) return 10;
+  if (count <= 8) return 8;
+  if (count <= 12) return 7;
+  if (count <= 16) return 6;
+  return 5;
+}
+
+function getRingSpacing(outerTileW, innerTileW) {
+  /*
+    outer ring과 inner ring 사이의 최소 안전거리.
+    8px이 지금 기준에서 안 겹치면서 꽤 가까운 값.
+    더 붙이고 싶으면 6으로 줄여도 됨.
+  */
+  return outerTileW / 2 + innerTileW / 2 + 8;
 }
 
 function getSafeRingRadius(count, tileW, gap) {
   if (count <= 1) return 0;
 
-  return (tileW + gap) / (2 * Math.sin(Math.PI / count)) + 6;
+  /*
+    원형으로 배치했을 때 같은 ring 안에서 tile끼리 안 겹치는 최소 radius.
+  */
+  return (tileW + gap) / (2 * Math.sin(Math.PI / count)) + 3;
 }
 
 function positionCircleRing({
