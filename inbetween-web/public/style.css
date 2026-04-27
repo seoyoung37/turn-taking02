@@ -1,5 +1,5 @@
 :root {
-  --bg: #ffffff;
+  --bg: #ecece9;
   --panel: #f4f4f1;
   --text: #111111;
   --muted: #707070;
@@ -7,7 +7,7 @@
   --accent: #e1a43a;
   --shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.07);
   --shadow-card: 0 10px 24px rgba(0, 0, 0, 0.08);
-  --shadow-toolbar: 0 18px 30px rgba(0, 0, 0, 0.06);
+  --shadow-toolbar: 0 12px 22px rgba(0, 0, 0, 0.06);
 }
 
 * {
@@ -29,42 +29,39 @@ body {
   position: relative;
 }
 
-/* ---------- top title ---------- */
-
-.topbar {
-  position: fixed;
-  top: 18px;
-  left: 0;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  z-index: 40;
-  pointer-events: none;
-}
+/* ---------- top meeting title ---------- */
 
 .meeting-title {
-  pointer-events: auto;
-  color: #0d0d0d;
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+
+  color: #111;
   font-family: "Arial Black", "Helvetica Neue", Arial, sans-serif;
   font-weight: 900;
-  font-size: 20px;
+  font-size: 13px;
   line-height: 1;
-  letter-spacing: -0.07em;
+  letter-spacing: -0.055em;
   text-transform: lowercase;
+
   user-select: none;
+  pointer-events: none;
 }
 
 /* ---------- stage ---------- */
 
 .stage {
   position: fixed;
-  inset: 68px 36px 118px 36px;
+  inset: 68px 36px 104px 36px;
   display: grid;
   justify-content: center;
   align-content: center;
   align-items: center;
   gap: 26px;
   overflow: hidden;
+  background: var(--bg);
 }
 
 .stage.grid-mode {
@@ -82,7 +79,10 @@ body {
   position: relative;
   overflow: hidden;
   background: #d5d5d0;
-  border: 2px solid var(--accent);
+
+  /* 기본 상태에서는 노란 테두리 안 보이게 */
+  border: 2px solid transparent;
+
   box-shadow: var(--shadow-card);
   transition:
     transform 480ms cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -90,6 +90,7 @@ body {
     height 480ms cubic-bezier(0.2, 0.8, 0.2, 1),
     left 480ms cubic-bezier(0.2, 0.8, 0.2, 1),
     top 480ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 180ms ease,
     box-shadow 240ms ease,
     opacity 240ms ease;
   will-change: transform, left, top, width, height;
@@ -170,6 +171,7 @@ body {
 .tile.flat {
   transform: perspective(1200px) rotateX(74deg) scale(0.98);
   transform-origin: center bottom;
+  opacity: 0.9;
 }
 
 .tile.mouth-open {
@@ -199,11 +201,14 @@ body {
 .tile.speaker {
   transform: perspective(1200px) rotateX(0deg) scale(1);
   transform-origin: center bottom;
+  opacity: 1;
 }
 
+/* speaker에게만 노란 테두리 */
 .tile.speaker {
+  border-color: var(--accent);
   box-shadow:
-    0 0 0 4px rgba(225, 164, 58, 0.18),
+    0 0 0 4px rgba(225, 164, 58, 0.16),
     0 20px 40px rgba(0, 0, 0, 0.12);
 }
 
@@ -217,11 +222,21 @@ body {
   aspect-ratio: 1 / 1;
   border-radius: 50% !important;
   overflow: hidden;
+
+  /* circle mode에서도 기본은 노란 테두리 없음 */
+  border-color: transparent;
 }
 
 .stage.circle-mode .tile,
 .stage.circle-mode .tile video {
   border-radius: 50% !important;
+}
+
+.stage.circle-mode .tile.speaker {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 4px rgba(225, 164, 58, 0.16),
+    0 16px 32px rgba(0, 0, 0, 0.12);
 }
 
 .stage.circle-mode .tile .name {
@@ -243,23 +258,25 @@ body {
 .leave-message {
   align-self: center;
   justify-self: center;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   color: #1a1a1a;
 }
 
-/* ---------- toolbar ---------- */
+/* ---------- smaller toolbar ---------- */
 
 .toolbar-shell {
   position: fixed;
   left: 50%;
-  bottom: 20px;
+  bottom: 18px;
   transform: translateX(-50%);
-  z-index: 50;
-  padding: 10px;
+  z-index: 1000;
+
+  padding: 7px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel);
+
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.92),
     var(--shadow-toolbar);
@@ -268,31 +285,37 @@ body {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 
 .toolbar-btn {
   appearance: none;
   border: none;
   outline: none;
-  min-height: 50px;
-  padding: 0 20px;
+
+  min-height: 36px;
+  padding: 0 14px;
   border-radius: 999px;
+
   background: #fbfbf9;
   color: #141414;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+
   cursor: pointer;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 3px 8px rgba(0, 0, 0, 0.05);
+
   transition:
     transform 160ms ease,
     box-shadow 160ms ease,
     background 160ms ease,
     color 160ms ease,
     opacity 160ms ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 4px 10px rgba(0, 0, 0, 0.06);
 }
 
 .toolbar-btn:hover {
@@ -304,11 +327,11 @@ body {
 }
 
 .toolbar-btn.primary {
-  background: #111111;
-  color: #ffffff;
+  background: #111;
+  color: #fff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 6px 14px rgba(0, 0, 0, 0.18);
+    0 5px 12px rgba(0, 0, 0, 0.16);
 }
 
 .toolbar-btn.secondary {
@@ -326,28 +349,38 @@ body {
 
 @media (max-width: 1200px) {
   .stage {
-    inset: 68px 24px 122px 24px;
+    inset: 60px 24px 104px 24px;
   }
 
   .toolbar-btn {
-    min-height: 46px;
-    padding: 0 16px;
-    font-size: 14px;
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .toolbar-shell {
+    bottom: 16px;
+    padding: 6px;
   }
 }
 
 @media (max-width: 860px) {
+  .meeting-title {
+    top: 14px;
+    font-size: 12px;
+  }
+
+  .stage {
+    inset: 54px 18px 98px 18px;
+  }
+
   .toolbar {
-    gap: 8px;
+    gap: 6px;
   }
 
   .toolbar-btn {
-    min-height: 42px;
-    padding: 0 14px;
-    font-size: 13px;
-  }
-
-  .meeting-title {
-    font-size: 17px;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 11px;
   }
 }
