@@ -31,6 +31,15 @@ let localStream = null;
 let localVideoEl = null;
 
 const participants = new Map();
+
+/*
+  peers:
+  remoteId -> {
+    pc,
+    stream,
+    pendingCandidates
+  }
+*/
 const peers = new Map();
 
 let audioContext;
@@ -40,11 +49,6 @@ let audioData;
 let faceLandmarker = null;
 let faceScaleBaseline = null;
 
-/*
-  activeSpeakerId: 지금 실제로 말하고 있는 사람
-  heldSpeakerId: 마지막으로 speaker였던 사람
-  heldSpeakerId는 다음 speaker가 나타날 때까지 유지됨
-*/
 let activeSpeakerId = null;
 let heldSpeakerId = null;
 
@@ -58,23 +62,17 @@ let lastStateSentAt = 0;
 let lastSpeakingTick = Date.now();
 let hasJoinedRoom = false;
 
-/*
-  Speaker detection 값을 더 민감하게 조정
-*/
 const SPEECH_START_THRESHOLD = 0.018;
 const SPEECH_STOP_THRESHOLD = 0.01;
 const SPEECH_START_HOLD_MS = 80;
 const SPEECH_STOP_HOLD_MS = 700;
 
-/*
-  정적 5초 후 circle mode
-*/
 const SILENCE_TO_CIRCLE_MS = 5000;
-
-/*
-  speaker로 인정할 최소 volume
-*/
 const ACTIVE_SPEAKER_VOLUME = 0.012;
+
+const LIP_GAP_THRESHOLD = 0.045;
+const JAW_OPEN_THRESHOLD = 0.22;
+const LEAN_FORWARD_SCALE = 1.12;
 
 let speechCandidateSince = null;
 let silenceCandidateSince = null;
@@ -90,12 +88,71 @@ const localState = {
   speakingMs: 0,
 };
 
-const ICE_SERVERS = [
+/*
+  기본은 STUN만 사용.
+  server.js에 /config를 추가하고 TURN 환경변수를 넣으면,
+  여기서 자동으로 TURN까지 받아오게 됨.
+*/
+let ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+registerMediaUnlock();
 init();
+
+async function loadIceServers() {
+  try {
+    const response = await fetch("/config");
+
+    if (!response.ok) {
+      throw new Error(`Config request failed: ${response.status}`);
+    }
+
+    const config = await response.json();
+
+    if (Array.isArray(config.iceServers) && config.iceServers.length > 0) {
+      ICE_SERVERS = config.iceServers;
+    }
+
+    console.log("ICE servers loaded:", ICE_SERVERS);
+  } catch (error) {
+    console.warn(
+      "Failed to load /config. Using default STUN servers only.",
+      error
+    );
+  }
+}
+
+function registerMediaUnlock() {
+  const unlock = () => {
+    if (audioContext && audioContext.state === "suspended") {
+      audioContext.resume().catch((error) => {
+        console.warn("audioContext resume failed:", error);
+      });
+    }
+
+    participants.forEach((participant) => {
+      tryPlayVideo(participant.video);
+    });
+  };
+
+  document.addEventListener("click", unlock);
+  document.addEventListener("touchstart", unlock);
+  document.addEventListener("keydown", unlock);
+}
+
+function tryPlayVideo(video) {
+  if (!video) return;
+
+  const promise = video.play();
+
+  if (promise && typeof promise.catch === "function") {
+    promise.catch((error) => {
+      console.warn("video play blocked or delayed:", error);
+    });
+  }
+}
 
 function joinRoom() {
   if (!socket.connected) return;
@@ -115,6 +172,7 @@ async function init() {
   console.log("init started");
 
   try {
+    await loadIceServers();
     await startLocalMedia();
 
     console.log("local media ready", localStream);
@@ -143,6 +201,9 @@ async function init() {
         isLocal: true,
       });
 
+      /*
+        새로 들어온 사람만 기존 유저들에게 offer를 보냄.
+      */
       for (const user of users) {
         addParticipant({
           id: user.id,
@@ -169,6 +230,8 @@ async function init() {
     });
 
     socket.on("user-joined", ({ id, name, state }) => {
+      console.log("user joined:", id, name);
+
       addParticipant({
         id,
         name,
@@ -179,6 +242,7 @@ async function init() {
     });
 
     socket.on("user-left", ({ id }) => {
+      console.log("user left:", id);
       removeParticipant(id);
     });
 
@@ -282,9 +346,6 @@ function setupButtons() {
       circleModeEnabled = !circleModeEnabled;
       circleModeEnabledAt = circleModeEnabled ? now : null;
 
-      /*
-        Circle Mode On을 누른 시점부터 5초 정적 카운트 시작
-      */
       lastAnySpeakerAt = now;
       noSpeakerMode = false;
 
@@ -352,10 +413,27 @@ function addParticipant({ id, name, stream, state, isLocal }) {
   const video = document.createElement("video");
   video.autoplay = true;
   video.playsInline = true;
-  video.srcObject = stream;
+  video.muted = Boolean(isLocal);
+  video.volume = isLocal ? 0 : 1;
+
+  /*
+    중요:
+    ontrack이 먼저 도착해서 peer stream이 이미 만들어졌을 수도 있으므로,
+    기존 peer stream이 있으면 그걸 우선 연결.
+  */
+  const existingPeer = peers.get(id);
+
+  if (!isLocal && existingPeer?.stream) {
+    video.srcObject = existingPeer.stream;
+  } else {
+    video.srcObject = stream;
+  }
+
+  video.addEventListener("loadedmetadata", () => {
+    tryPlayVideo(video);
+  });
 
   if (isLocal) {
-    video.muted = true;
     localVideoEl = video;
   }
 
@@ -380,7 +458,7 @@ function addParticipant({ id, name, stream, state, isLocal }) {
   participants.set(id, {
     id,
     name,
-    stream,
+    stream: video.srcObject || stream,
     tile,
     video,
     state: {
@@ -396,6 +474,8 @@ function addParticipant({ id, name, stream, state, isLocal }) {
     },
     isLocal,
   });
+
+  tryPlayVideo(video);
 }
 
 function removeParticipant(id) {
@@ -425,14 +505,24 @@ function removeParticipant(id) {
 async function createOffer(remoteId) {
   const pc = ensurePeer(remoteId);
 
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
+  try {
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    });
 
-  socket.emit("signal", {
-    to: remoteId,
-    type: "offer",
-    sdp: pc.localDescription,
-  });
+    await pc.setLocalDescription(offer);
+
+    socket.emit("signal", {
+      to: remoteId,
+      type: "offer",
+      sdp: pc.localDescription,
+    });
+
+    console.log("offer sent to:", remoteId);
+  } catch (error) {
+    console.error("createOffer failed:", remoteId, error);
+  }
 }
 
 function ensurePeer(remoteId) {
@@ -444,15 +534,69 @@ function ensurePeer(remoteId) {
     iceServers: ICE_SERVERS,
   });
 
-  localStream.getTracks().forEach((track) => {
-    pc.addTrack(track, localStream);
-  });
-
   const remoteStream = new MediaStream();
 
+  peers.set(remoteId, {
+    pc,
+    stream: remoteStream,
+    pendingCandidates: [],
+  });
+
+  console.log("peer created:", remoteId, ICE_SERVERS);
+
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      pc.addTrack(track, localStream);
+    });
+  }
+
+  pc.onconnectionstatechange = () => {
+    console.log(
+      "peer connection state:",
+      remoteId,
+      pc.connectionState
+    );
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    console.log(
+      "ice connection state:",
+      remoteId,
+      pc.iceConnectionState
+    );
+  };
+
+  pc.onsignalingstatechange = () => {
+    console.log(
+      "signaling state:",
+      remoteId,
+      pc.signalingState
+    );
+  };
+
+  pc.onicecandidateerror = (event) => {
+    console.warn("ICE candidate error:", {
+      remoteId,
+      url: event.url,
+      errorCode: event.errorCode,
+      errorText: event.errorText,
+    });
+  };
+
   pc.ontrack = (event) => {
-    event.streams[0].getTracks().forEach((track) => {
-      remoteStream.addTrack(track);
+    const incomingTracks =
+      event.streams && event.streams[0]
+        ? event.streams[0].getTracks()
+        : [event.track].filter(Boolean);
+
+    incomingTracks.forEach((track) => {
+      const alreadyAdded = remoteStream
+        .getTracks()
+        .some((existingTrack) => existingTrack.id === track.id);
+
+      if (!alreadyAdded) {
+        remoteStream.addTrack(track);
+      }
     });
 
     const participant = participants.get(remoteId);
@@ -460,11 +604,27 @@ function ensurePeer(remoteId) {
     if (participant) {
       participant.stream = remoteStream;
       participant.video.srcObject = remoteStream;
+
+      tryPlayVideo(participant.video);
     }
+
+    console.log(
+      "remote track received from:",
+      remoteId,
+      remoteStream.getTracks().map((track) => ({
+        kind: track.kind,
+        id: track.id,
+        enabled: track.enabled,
+        readyState: track.readyState,
+      }))
+    );
   };
 
   pc.onicecandidate = (event) => {
-    if (!event.candidate) return;
+    if (!event.candidate) {
+      console.log("ICE gathering complete for:", remoteId);
+      return;
+    }
 
     socket.emit("signal", {
       to: remoteId,
@@ -473,39 +633,97 @@ function ensurePeer(remoteId) {
     });
   };
 
-  peers.set(remoteId, {
-    pc,
-    stream: remoteStream,
-  });
-
   return pc;
 }
 
 async function handleSignal({ from, type, sdp, candidate }) {
   const pc = ensurePeer(from);
 
-  if (type === "offer") {
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+  try {
+    if (type === "offer") {
+      console.log("offer received from:", from);
 
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      await flushPendingIceCandidates(from);
 
-    socket.emit("signal", {
-      to: from,
-      type: "answer",
-      sdp: pc.localDescription,
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit("signal", {
+        to: from,
+        type: "answer",
+        sdp: pc.localDescription,
+      });
+
+      console.log("answer sent to:", from);
+      return;
+    }
+
+    if (type === "answer") {
+      console.log("answer received from:", from);
+
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      await flushPendingIceCandidates(from);
+
+      return;
+    }
+
+    if (type === "ice" && candidate) {
+      await addIceCandidateSafely(from, candidate);
+      return;
+    }
+  } catch (error) {
+    console.error("handleSignal error:", {
+      from,
+      type,
+      error,
     });
   }
+}
 
-  if (type === "answer") {
-    await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+async function addIceCandidateSafely(remoteId, candidate) {
+  const peer = peers.get(remoteId);
+  if (!peer) return;
+
+  const pc = peer.pc;
+  const iceCandidate = new RTCIceCandidate(candidate);
+
+  /*
+    중요:
+    remoteDescription이 설정되기 전에 ICE가 먼저 오면
+    바로 addIceCandidate 하면 실패할 수 있음.
+    그래서 pendingCandidates에 넣었다가 remoteDescription 후 flush.
+  */
+  if (pc.remoteDescription && pc.remoteDescription.type) {
+    try {
+      await pc.addIceCandidate(iceCandidate);
+    } catch (error) {
+      console.warn("addIceCandidate failed:", remoteId, error);
+    }
+  } else {
+    peer.pendingCandidates.push(iceCandidate);
+    console.log("ICE candidate queued:", remoteId);
+  }
+}
+
+async function flushPendingIceCandidates(remoteId) {
+  const peer = peers.get(remoteId);
+  if (!peer) return;
+
+  const pc = peer.pc;
+
+  if (!pc.remoteDescription || !pc.remoteDescription.type) {
+    return;
   }
 
-  if (type === "ice" && candidate) {
+  while (peer.pendingCandidates.length > 0) {
+    const candidate = peer.pendingCandidates.shift();
+
     try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      await pc.addIceCandidate(candidate);
+      console.log("queued ICE candidate added:", remoteId);
     } catch (error) {
-      console.warn("ICE candidate error:", error);
+      console.warn("queued ICE candidate failed:", remoteId, error);
     }
   }
 }
@@ -549,17 +767,10 @@ function analyzeLocalAudio() {
 
   localState.volume = rms;
 
-  /*
-    Console에서 mic rms 확인용.
-    나중에 안정되면 이 console.log는 지워도 됨.
-  */
   if (rms > 0.01) {
     console.log("mic rms:", rms, "isSpeaking:", localState.isSpeaking);
   }
 
-  /*
-    speaking 시작 감지
-  */
   if (!localState.isSpeaking) {
     if (rms > SPEECH_START_THRESHOLD) {
       if (speechCandidateSince === null) {
@@ -574,9 +785,6 @@ function analyzeLocalAudio() {
       speechCandidateSince = null;
     }
   } else {
-    /*
-      speaking 종료 감지
-    */
     if (rms < SPEECH_STOP_THRESHOLD) {
       if (silenceCandidateSince === null) {
         silenceCandidateSince = now;
@@ -631,7 +839,7 @@ function detectLipParting(landmarks, result) {
   const jawOpen =
     blendshapes.find((c) => c.categoryName === "jawOpen")?.score || 0;
 
-  return normalizedGap > 0.045 || jawOpen > 0.22;
+  return normalizedGap > LIP_GAP_THRESHOLD || jawOpen > JAW_OPEN_THRESHOLD;
 }
 
 function detectLeaningForward(landmarks) {
@@ -647,7 +855,7 @@ function detectLeaningForward(landmarks) {
 
   faceScaleBaseline = faceScaleBaseline * 0.995 + faceWidth * 0.005;
 
-  return faceWidth > faceScaleBaseline * 1.12;
+  return faceWidth > faceScaleBaseline * LEAN_FORWARD_SCALE;
 }
 
 function getFocusSpeakerId() {
@@ -726,10 +934,6 @@ function updateConversationState() {
     const state = participant.state;
     const volume = state.volume || 0;
 
-    /*
-      speaker 판단:
-      isSpeaking이 true이고 volume이 최소 기준 이상이면 speaker로 인정
-    */
     const isRealSpeaker =
       !state.muted &&
       state.isSpeaking &&
@@ -756,20 +960,10 @@ function updateConversationState() {
     return;
   }
 
-  /*
-    실제로 말하는 사람은 없음.
-    하지만 heldSpeakerId는 유지한다.
-    그래서 마지막 speaker 화면은 다음 speaker가 나타날 때까지 계속 세워져 있음.
-  */
   activeSpeakerId = null;
 
   const silenceTime = now - lastAnySpeakerAt;
 
-  /*
-    Circle Mode On 상태에서
-    실제 speaker가 없고
-    정적 5초가 지나면 circle mode 진입.
-  */
   noSpeakerMode =
     circleModeEnabled &&
     users.length >= 2 &&
@@ -918,18 +1112,10 @@ function applyCircleLayout() {
   const centerX = rect.width / 2;
   const centerY = topSafeArea + usableHeight / 2;
 
-  /*
-    speakingMs 기준 정렬:
-    speakingMs가 큰 사람 = 말을 많이 한 사람
-  */
   const ranked = [...users].sort(
     (a, b) => (b.state.speakingMs || 0) - (a.state.speakingMs || 0)
   );
 
-  /*
-    말을 많이 한 절반 = outer ring
-    말을 적게 한 절반 = inner ring
-  */
   const outerCount = Math.ceil(count / 2);
   const outerIds = new Set(ranked.slice(0, outerCount).map((p) => p.id));
 
@@ -948,10 +1134,6 @@ function applyCircleLayout() {
     usableHeight / 2 - outerTileH / 2 - 24
   );
 
-  /*
-    outer ring은 너무 넓지 않게 촘촘하게.
-    inner ring은 조금 안쪽으로.
-  */
   const baseRadius = getTightRadius(count, outerTileW, getCircleGap(count));
 
   const outerRadius = clamp(baseRadius, 95, Math.min(maxRadius, 220));
@@ -1028,77 +1210,65 @@ function positionCircleRing({
 }
 
 function applyVisualStates() {
-    const singleParticipant = participants.size === 1;
-    const focusSpeakerId = getFocusSpeakerId();
-  
-    participants.forEach((participant) => {
-      const state = participant.state;
-      const tile = participant.tile;
-  
-      const isSpeakerTile =
-        focusSpeakerId !== null && participant.id === focusSpeakerId;
-  
-      /*
-        pre-speech cue는 speaker가 아닌 사람에게만 적용
-      */
-      const isReady =
-        !state.muted &&
-        !isSpeakerTile &&
-        !noSpeakerMode &&
-        state.lipOpen;
-  
-      const leaningReady = isReady && state.leaning;
-      const gazeReady = isReady && state.gazingSpeaker;
-  
-      if (noSpeakerMode) {
-        tile.classList.remove(
-          "flat",
-          "speaker",
-          "leaning",
-          "gazing",
-          "mouth-open"
-        );
-        tile.classList.add("upright");
-      } else {
-        /*
-          speaker / held speaker만 upright
-        */
-        tile.classList.toggle("speaker", isSpeakerTile);
-  
-        tile.classList.toggle(
-          "upright",
-          isSpeakerTile || singleParticipant
-        );
-  
-        /*
-          speaker가 아닌 사람들만 flat
-        */
-        tile.classList.toggle(
-          "flat",
-          !isSpeakerTile && !singleParticipant
-        );
-  
-        /*
-          speaker가 아닌 사람들한테만 cue 적용
-        */
-        tile.classList.toggle("mouth-open", isReady);
-        tile.classList.toggle("leaning", leaningReady);
-        tile.classList.toggle("gazing", gazeReady);
-      }
-  
-      tile.classList.toggle("muted", state.muted);
-  
-      const lipDot = tile.querySelector(".lip-dot");
-      const leanDot = tile.querySelector(".lean-dot");
-      const gazeDot = tile.querySelector(".gaze-dot");
-  
-      lipDot?.classList.toggle("active", Boolean(state.lipOpen));
-      leanDot?.classList.toggle("active", Boolean(state.leaning));
-      gazeDot?.classList.toggle("active", Boolean(state.gazingSpeaker));
-  
-      updateGazePullDirection(participant);
-    });
-  }
+  const singleParticipant = participants.size === 1;
+  const focusSpeakerId = getFocusSpeakerId();
+
+  participants.forEach((participant) => {
+    const state = participant.state;
+    const tile = participant.tile;
+
+    const isSpeakerTile =
+      focusSpeakerId !== null && participant.id === focusSpeakerId;
+
+    const isReady =
+      !state.muted &&
+      !isSpeakerTile &&
+      !noSpeakerMode &&
+      state.lipOpen;
+
+    const leaningReady = isReady && state.leaning;
+    const gazeReady = isReady && state.gazingSpeaker;
+
+    if (noSpeakerMode) {
+      tile.classList.remove(
+        "flat",
+        "speaker",
+        "leaning",
+        "gazing",
+        "mouth-open"
+      );
+      tile.classList.add("upright");
+    } else {
+      tile.classList.toggle("speaker", isSpeakerTile);
+
+      tile.classList.toggle(
+        "upright",
+        isSpeakerTile || singleParticipant
+      );
+
+      tile.classList.toggle(
+        "flat",
+        !isSpeakerTile && !singleParticipant
+      );
+
+      tile.classList.toggle("mouth-open", isReady);
+      tile.classList.toggle("leaning", leaningReady);
+      tile.classList.toggle("gazing", gazeReady);
+    }
+
+    tile.classList.toggle("muted", state.muted);
+
+    const lipDot = tile.querySelector(".lip-dot");
+    const leanDot = tile.querySelector(".lean-dot");
+    const gazeDot = tile.querySelector(".gaze-dot");
+
+    lipDot?.classList.toggle("active", Boolean(state.lipOpen));
+    leanDot?.classList.toggle("active", Boolean(state.leaning));
+    gazeDot?.classList.toggle("active", Boolean(state.gazingSpeaker));
+
+    updateGazePullDirection(participant);
+  });
+}
 
 function updateGazePullDirection(participant) {
   const focusSpeakerId = getFocusSpeakerId();
