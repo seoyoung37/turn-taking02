@@ -66,9 +66,9 @@ const SPEECH_STOP_HOLD_MS = 700;
 const SILENCE_TO_CIRCLE_MS = 5000;
 const ACTIVE_SPEAKER_VOLUME = 0.012;
 
-const LIP_GAP_THRESHOLD = 0.045;
-const JAW_OPEN_THRESHOLD = 0.22;
-const LEAN_FORWARD_SCALE = 1.12;
+const LIP_GAP_THRESHOLD = 0.032;
+const JAW_OPEN_THRESHOLD = 0.13;
+const LEAN_FORWARD_SCALE = 1.06;
 
 let speechCandidateSince = null;
 let silenceCandidateSince = null;
@@ -883,15 +883,19 @@ function detectGazingAtSpeaker(landmarks) {
   const eyeCenterX = (leftEye.x + rightEye.x) / 2;
   const faceHeight = distance2D(forehead, chin);
 
-  let lookX = (nose.x - eyeCenterX) * 6;
+  let lookX = (nose.x - eyeCenterX) * 5.2;
   let lookY = (nose.y - (forehead.y + chin.y) / 2) / faceHeight;
 
   lookX = -lookX;
   lookX = clamp(lookX, -1, 1);
   lookY = clamp(lookY, -1, 1);
 
-  if (targetLength < 0.22) {
-    return Math.abs(lookX) < 0.45 && Math.abs(lookY) < 0.55;
+  /*
+    speaker가 화면 중앙 근처에 있으면,
+    사용자가 정면을 보고 있는 것만으로도 gazingSpeaker로 인정.
+  */
+  if (targetLength < 0.28) {
+    return Math.abs(lookX) < 0.62 && Math.abs(lookY) < 0.72;
   }
 
   const targetNorm = {
@@ -900,7 +904,7 @@ function detectGazingAtSpeaker(landmarks) {
   };
 
   const lookLength = Math.hypot(lookX, lookY);
-  if (lookLength < 0.08) return false;
+  if (lookLength < 0.06) return false;
 
   const lookNorm = {
     x: lookX / lookLength,
@@ -909,7 +913,7 @@ function detectGazingAtSpeaker(landmarks) {
 
   const dot = lookNorm.x * targetNorm.x + lookNorm.y * targetNorm.y;
 
-  return dot > 0.42;
+  return dot > 0.22;
 }
 
 function updateConversationState() {
@@ -1277,20 +1281,37 @@ function applyVisualStates() {
   const focusSpeakerId = getFocusSpeakerId();
 
   participants.forEach((participant) => {
-    const state = participant.state;
+    /*
+      local participant는 participant.state보다 localState가 더 최신임.
+      그래서 local tile은 localState를 직접 기준으로 판단해야 효과가 바로 보임.
+    */
+    const state = participant.isLocal
+      ? {
+          ...participant.state,
+          ...localState,
+        }
+      : participant.state;
+
     const tile = participant.tile;
 
     const isSpeakerTile =
       focusSpeakerId !== null && participant.id === focusSpeakerId;
 
-    const isReady =
-      !state.muted &&
-      !isSpeakerTile &&
+    /*
+      핵심:
+      speaker가 아닌 사람에게만 pre-speech cue 적용.
+      muted이면 적용 안 됨.
+      noSpeakerMode에서도 적용 안 됨.
+    */
+    const canShowPreSpeechCue =
+      !singleParticipant &&
       !noSpeakerMode &&
-      state.lipOpen;
+      !isSpeakerTile &&
+      !state.muted;
 
-    const leaningReady = isReady && state.leaning;
-    const gazeReady = isReady && state.gazingSpeaker;
+    const mouthReady = canShowPreSpeechCue && state.lipOpen;
+    const gazeReady = mouthReady && state.gazingSpeaker;
+    const leaningReady = mouthReady && state.leaning;
 
     if (noSpeakerMode) {
       tile.classList.remove(
@@ -1298,19 +1319,28 @@ function applyVisualStates() {
         "speaker",
         "leaning",
         "gazing",
-        "mouth-open"
+        "mouth-open",
+        "turn-ready"
       );
+
       tile.classList.add("upright");
     } else {
       tile.classList.toggle("speaker", isSpeakerTile);
 
-      tile.classList.toggle("upright", isSpeakerTile || singleParticipant);
+      tile.classList.toggle(
+        "upright",
+        isSpeakerTile || singleParticipant
+      );
 
-      tile.classList.toggle("flat", !isSpeakerTile && !singleParticipant);
+      tile.classList.toggle(
+        "flat",
+        !isSpeakerTile && !singleParticipant
+      );
 
-      tile.classList.toggle("mouth-open", isReady);
-      tile.classList.toggle("leaning", leaningReady);
+      tile.classList.toggle("turn-ready", mouthReady);
+      tile.classList.toggle("mouth-open", mouthReady);
       tile.classList.toggle("gazing", gazeReady);
+      tile.classList.toggle("leaning", leaningReady);
     }
 
     tile.classList.toggle("muted", state.muted);

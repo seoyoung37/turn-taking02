@@ -263,3 +263,55 @@ body {
   font-size: 18px;
   font-weight: 600;
 }
+
+/* Stronger pre-speech cue for non-speaker tiles */
+.tile.turn-ready.flat {
+  opacity: 0.94;
+  box-shadow:
+    0 0 0 1.5px rgba(255, 211, 110, 0.7),
+    0 16px 44px rgba(0, 0, 0, 0.14);
+}
+
+.tile.gazing.flat {
+  transform-origin: center bottom;
+  transform:
+    rotateX(58deg)
+    translate(
+      calc(var(--pull-x, 0) * 26px),
+      calc(var(--pull-y, 0) * 26px)
+    )
+    translateY(-12px)
+    scale(1.03);
+}
+
+.tile.leaning.flat {
+  transform-origin: center bottom;
+  transform:
+    rotateX(42deg)
+    translateY(-22px)
+    scale(1.06);
+}
+
+.tile.leaning.flat video {
+  transform: scale(1.12);
+  object-position: center 72%;
+}
+
+.tile.local.leaning.flat video {
+  transform: scaleX(-1) scale(1.12);
+}
+
+.tile.mouth-open:not(.speaker)::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 13%;
+  width: 52px;
+  height: 14px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(255, 211, 110, 0.82);
+  filter: blur(1px);
+  pointer-events: none;
+  z-index: 3;
+}
