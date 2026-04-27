@@ -1083,8 +1083,8 @@ function applyCircleLayout() {
   const rect = stage.getBoundingClientRect();
 
   const sideSafeArea = 60;
-  const topSafeArea = 48;
-  const bottomSafeArea = 96;
+  const topSafeArea = 56;
+  const bottomSafeArea = 108;
 
   const usableWidth = rect.width - sideSafeArea * 2;
   const usableHeight = rect.height - topSafeArea - bottomSafeArea;
@@ -1092,50 +1092,124 @@ function applyCircleLayout() {
   const centerX = rect.width / 2;
   const centerY = topSafeArea + usableHeight / 2;
 
-  const ranked = [...users].sort(
-    (a, b) => (b.state.speakingMs || 0) - (a.state.speakingMs || 0)
-  );
+  /*
+    speakingMs가 큰 사람 = 말을 많이 한 사람
+    speakingMs가 작은 사람 = 말을 적게 한 사람
+  */
+  const ranked = [...users].sort((a, b) => {
+    const diff = (b.state.speakingMs || 0) - (a.state.speakingMs || 0);
+    if (diff !== 0) return diff;
+    return a.id.localeCompare(b.id);
+  });
 
-  let tileW;
+  /*
+    말을 많이 한 절반: outer ring
+    말을 적게 한 절반: inner ring
+  */
+  const outerCount = Math.ceil(count / 2);
+  const outerUsers = ranked.slice(0, outerCount);
+  const innerUsers = ranked.slice(outerCount);
 
-  if (count <= 3) tileW = 170;
-  else if (count <= 5) tileW = 148;
-  else if (count <= 7) tileW = 130;
-  else if (count <= 9) tileW = 116;
-  else if (count <= 12) tileW = 102;
-  else tileW = 88;
+  let outerTileW = getCircleTileWidth(count, usableWidth, usableHeight);
+  let innerTileW = outerTileW * 0.82;
 
-  tileW = Math.min(tileW, usableWidth / 5.5, usableHeight / 4.4);
-  tileW = clamp(tileW, 56, 170);
+  const outerGap = count <= 6 ? 20 : 16;
+  const innerGap = count <= 6 ? 16 : 12;
 
-  const gap = count <= 6 ? 18 : 14;
+  let outerRadius = 0;
+  let innerRadius = 0;
 
-  const maxRadius =
-    Math.min(usableWidth, usableHeight) / 2 - tileW / 2 - 8;
+  /*
+    두 원이 겹치지 않도록 tile size를 자동 조정
+  */
+  for (let i = 0; i < 12; i++) {
+    innerTileW = clamp(outerTileW * 0.82, 46, outerTileW * 0.9);
 
-  let radius = getSafeRingRadius(count, tileW, gap);
+    const maxOuterRadius =
+      Math.min(usableWidth, usableHeight) / 2 - outerTileW / 2 - 10;
 
-  if (radius > maxRadius) {
-    const fittedTile =
-      (maxRadius * 2 * Math.sin(Math.PI / count)) - gap;
-    tileW = clamp(fittedTile, 52, tileW);
-    radius = getSafeRingRadius(count, tileW, gap);
+    const outerNeededRadius = getSafeRingRadius(
+      outerUsers.length,
+      outerTileW,
+      outerGap
+    );
+
+    const innerNeededRadius =
+      innerUsers.length <= 1
+        ? 0
+        : getSafeRingRadius(innerUsers.length, innerTileW, innerGap);
+
+    const minRingSeparation =
+      outerTileW / 2 + innerTileW / 2 + 24;
+
+    const requiredOuterRadius = Math.max(
+      outerNeededRadius,
+      innerNeededRadius + minRingSeparation
+    );
+
+    if (requiredOuterRadius <= maxOuterRadius || outerTileW <= 54) {
+      outerRadius = Math.min(
+        maxOuterRadius,
+        Math.max(requiredOuterRadius, maxOuterRadius * 0.78)
+      );
+
+      innerRadius =
+        innerUsers.length <= 1
+          ? 0
+          : Math.min(innerNeededRadius, outerRadius - minRingSeparation);
+
+      break;
+    }
+
+    outerTileW *= 0.92;
   }
 
   positionCircleRing({
-    users: ranked,
+    users: outerUsers,
     centerX,
     centerY,
-    radius,
-    tileW,
+    radius: outerRadius,
+    tileW: outerTileW,
     startAngle: orbitAngle - Math.PI / 2,
     rotateTiles: true,
+    ringClass: "outer-ring",
   });
+
+  positionCircleRing({
+    users: innerUsers,
+    centerX,
+    centerY,
+    radius: innerRadius,
+    tileW: innerTileW,
+    startAngle:
+      orbitAngle -
+      Math.PI / 2 +
+      Math.PI / Math.max(innerUsers.length, 1),
+    rotateTiles: true,
+    ringClass: "inner-ring",
+  });
+}
+
+function getCircleTileWidth(count, usableWidth, usableHeight) {
+  let base;
+
+  if (count <= 3) base = 170;
+  else if (count <= 5) base = 148;
+  else if (count <= 7) base = 132;
+  else if (count <= 9) base = 118;
+  else if (count <= 12) base = 104;
+  else if (count <= 16) base = 92;
+  else base = 82;
+
+  const viewportLimit = Math.min(usableWidth / 5.2, usableHeight / 4.2);
+
+  return clamp(Math.min(base, viewportLimit), 54, 170);
 }
 
 function getSafeRingRadius(count, tileW, gap) {
   if (count <= 1) return 0;
-  return (tileW + gap) / (2 * Math.sin(Math.PI / count)) + 4;
+
+  return (tileW + gap) / (2 * Math.sin(Math.PI / count)) + 6;
 }
 
 function positionCircleRing({
@@ -1146,13 +1220,17 @@ function positionCircleRing({
   tileW,
   startAngle,
   rotateTiles,
+  ringClass,
 }) {
   if (!users.length) return;
 
   const tileH = tileW;
 
   users.forEach((participant, index) => {
-    const angle = startAngle + (Math.PI * 2 * index) / users.length;
+    const angle =
+      users.length === 1
+        ? startAngle
+        : startAngle + (Math.PI * 2 * index) / users.length;
 
     const x = centerX + Math.cos(angle) * radius - tileW / 2;
     const y = centerY + Math.sin(angle) * radius - tileH / 2;
@@ -1166,11 +1244,14 @@ function positionCircleRing({
     tile.style.height = `${tileH}px`;
     tile.style.minWidth = "0px";
     tile.style.maxWidth = "none";
-    tile.style.zIndex = "2";
+    tile.style.zIndex = ringClass === "inner-ring" ? "3" : "2";
 
     tile.style.transform = rotateTiles
       ? `rotate(${angle + Math.PI / 2}rad)`
       : "none";
+
+    tile.classList.remove("outer-ring", "inner-ring");
+    tile.classList.add(ringClass);
   });
 }
 
