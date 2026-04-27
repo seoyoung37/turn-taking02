@@ -1194,7 +1194,7 @@ function applyCircleLayout() {
     const outerTileW = clamp(baseTileW, 120, 190);
     const innerTileW = clamp(baseTileW * 0.88, 105, 165);
 
-    const outerTileH = outerTileW * 0.5625;
+    const outerTileH = outerTileW;
 
     const maxOuterRadius = Math.min(
       usableWidth / 2 - outerTileW / 2 - 24,
@@ -1241,7 +1241,7 @@ function applyCircleLayout() {
   const outerTileW = clamp(baseTileW, 92, 170);
   const innerTileW = clamp(baseTileW * 0.88, 78, 145);
 
-  const outerTileH = outerTileW * 0.5625;
+  const outerTileH = outerTileW;
 
   const maxOuterRadius = Math.min(
     usableWidth / 2 - outerTileW / 2 - 28,
@@ -1295,7 +1295,7 @@ function positionCircleRing({
 }) {
   if (!users.length) return;
 
-  const tileH = tileW * 0.5625;
+  const tileH = tileW;
 
   users.forEach((participant, index) => {
     const angle = angleList

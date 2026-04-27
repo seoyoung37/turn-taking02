@@ -360,20 +360,29 @@ body {
   z-index: 2;
   max-width: none;
   min-width: 0;
-  aspect-ratio: 16 / 9;
-  border-radius: 5px;
+  aspect-ratio: 1 / 1;
+  border-radius: 50% !important;
   opacity: 1;
+  overflow:hidden;
 }
 
 .stage.circle-mode .tile video {
-  border-radius: 5px !important;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50% !important;
 }
 
 .stage.circle-mode .tile .name {
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  max-width: 78%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 9px;
-  padding: 3px 6px;
-  left: 5px;
-  bottom: 5px;
+  padding: 3px 7px;
 }
 
 .stage.circle-mode .tile .cue {
