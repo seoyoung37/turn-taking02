@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>InBetween</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+
+  <body>
+    <main id="stage" class="stage grid-mode"></main>
+
+    <div class="controls-dock">
+      <input id="roomInput" />
+      <button id="copyLinkBtn">Copy Invite Link</button>
+      <button id="circleToggleBtn" class="secondary">Circle Mode Off</button>
+      <button id="muteBtn">Mute</button>
+      <button id="cameraBtn">Camera Off</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
