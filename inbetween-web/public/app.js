@@ -11,28 +11,33 @@ let FilesetResolver;
 console.log("app.js loaded - LiveKit version");
 
 const stage = document.getElementById("stage");
+const meetingTitleEl = document.getElementById("meetingTitle");
+
 const muteBtn = document.getElementById("muteBtn");
 const cameraBtn = document.getElementById("cameraBtn");
 const copyLinkBtn = document.getElementById("copyLinkBtn");
 const circleToggleBtn = document.getElementById("circleToggleBtn");
 const leaveBtn = document.getElementById("leaveBtn");
 
-const url = new URL(window.location.href);
-const roomId = url.searchParams.get("room") || "studio";
+const pageUrl = new URL(window.location.href);
+const roomId = pageUrl.searchParams.get("room") || "studio";
+
+const meetingTitleStorageKey = `inbetween-title-${roomId}`;
+const participantNameStorageKey = `inbetween-name`;
+
+let meetingTitle = resolveMeetingTitle();
+applyMeetingTitle();
+syncUrlState();
 
 let displayName =
-  localStorage.getItem("inbetween-name") ||
+  localStorage.getItem(participantNameStorageKey) ||
   prompt("Your name?") ||
   "Participant";
 
-localStorage.setItem("inbetween-name", displayName);
+displayName = displayName.trim() || "Participant";
+localStorage.setItem(participantNameStorageKey, displayName);
 
 const clientIdentity = `${displayName}-${crypto.randomUUID().slice(0, 8)}`;
-
-const layoutShell = document.createElement("div");
-layoutShell.id = "layoutShell";
-layoutShell.className = "layout-shell single-shell";
-stage.appendChild(layoutShell);
 
 let lkRoom = null;
 let myId = null;
@@ -53,7 +58,6 @@ let heldSpeakerId = null;
 let lastAnySpeakerAt = Date.now();
 let noSpeakerMode = false;
 let circleModeEnabled = false;
-let circleModeEnabledAt = null;
 let orbitAngle = 0;
 
 let hasLeftRoom = false;
@@ -94,6 +98,37 @@ const decoder = new TextDecoder();
 
 registerMediaUnlock();
 init();
+
+function resolveMeetingTitle() {
+  const titleFromUrl = pageUrl.searchParams.get("title");
+  if (titleFromUrl && titleFromUrl.trim()) {
+    const clean = titleFromUrl.trim();
+    localStorage.setItem(meetingTitleStorageKey, clean);
+    return clean;
+  }
+
+  const saved = localStorage.getItem(meetingTitleStorageKey);
+  if (saved && saved.trim()) {
+    return saved.trim();
+  }
+
+  const prompted = prompt("Meeting name?") || "meeting";
+  const clean = prompted.trim() || "meeting";
+  localStorage.setItem(meetingTitleStorageKey, clean);
+  return clean;
+}
+
+function applyMeetingTitle() {
+  if (!meetingTitleEl) return;
+  meetingTitleEl.textContent = meetingTitle;
+}
+
+function syncUrlState() {
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set("room", roomId);
+  nextUrl.searchParams.set("title", meetingTitle);
+  window.history.replaceState({}, "", nextUrl.toString());
+}
 
 function registerMediaUnlock() {
   const unlock = () => {
@@ -189,7 +224,6 @@ async function init() {
     });
 
     sendStateNow();
-
     requestAnimationFrame(loop);
   } catch (error) {
     console.error("LiveKit init error:", error);
@@ -316,7 +350,7 @@ function addParticipant({ id, name, isLocal }) {
   tile.appendChild(nameTag);
   tile.appendChild(cue);
 
-  layoutShell.appendChild(tile);
+  stage.appendChild(tile);
 
   participants.set(id, {
     id,
@@ -605,12 +639,11 @@ function setupButtons() {
     copyLinkBtn.addEventListener("click", async () => {
       const inviteUrl = `${location.origin}${location.pathname}?room=${encodeURIComponent(
         roomId
-      )}`;
+      )}&title=${encodeURIComponent(meetingTitle)}`;
 
       await navigator.clipboard.writeText(inviteUrl);
 
       copyLinkBtn.textContent = "Copied";
-
       setTimeout(() => {
         copyLinkBtn.textContent = "Copy Invite Link";
       }, 1200);
@@ -622,8 +655,6 @@ function setupButtons() {
       const now = Date.now();
 
       circleModeEnabled = !circleModeEnabled;
-      circleModeEnabledAt = circleModeEnabled ? now : null;
-
       lastAnySpeakerAt = now;
       noSpeakerMode = false;
 
@@ -678,20 +709,15 @@ async function leaveRoom() {
   noSpeakerMode = false;
 
   stage.classList.remove("grid-mode", "circle-mode");
-  layoutShell.classList.remove("grid-shell", "circle-shell");
-  layoutShell.classList.add("single-shell");
-  layoutShell.innerHTML = "";
+  stage.innerHTML = "";
 
   const message = document.createElement("div");
   message.className = "leave-message";
   message.textContent = "You left the room.";
-
   stage.appendChild(message);
 
   [muteBtn, cameraBtn, circleToggleBtn, copyLinkBtn].forEach((button) => {
-    if (button) {
-      button.disabled = true;
-    }
+    if (button) button.disabled = true;
   });
 
   if (leaveBtn) {
@@ -950,7 +976,6 @@ function updateConversationState() {
 
     lastAnySpeakerAt = now;
     noSpeakerMode = false;
-
     return;
   }
 
@@ -970,7 +995,6 @@ function updateConversationState() {
 
 function applyLayout() {
   const count = participants.size;
-
   if (count === 0) return;
 
   if (noSpeakerMode && count >= 2) {
@@ -985,71 +1009,25 @@ function resetTileForGrid(tile) {
   tile.style.left = "";
   tile.style.top = "";
   tile.style.height = "";
+  tile.style.width = "";
   tile.style.transform = "";
   tile.style.zIndex = "";
-
-  tile.style.removeProperty("--x");
-  tile.style.removeProperty("--y");
-  tile.style.removeProperty("--tile-w");
-
-  tile.classList.remove("inner-ring", "outer-ring");
-}
-
-function resetLayoutShellInlineStyles() {
-  layoutShell.style.position = "";
-  layoutShell.style.left = "";
-  layoutShell.style.top = "";
-  layoutShell.style.transform = "";
-  layoutShell.style.width = "";
-  layoutShell.style.height = "";
-  layoutShell.style.maxWidth = "";
-  layoutShell.style.padding = "";
-  layoutShell.style.margin = "";
-  layoutShell.style.display = "";
-  layoutShell.style.gridTemplateColumns = "";
-  layoutShell.style.gridTemplateRows = "";
-  layoutShell.style.gap = "";
-  layoutShell.style.justifyContent = "";
-  layoutShell.style.alignContent = "";
-  layoutShell.style.alignItems = "";
 }
 
 function applyGridLayout(count) {
   stage.classList.add("grid-mode");
   stage.classList.remove("circle-mode");
 
-  stage.style.display = "flex";
-  stage.style.justifyContent = "center";
-  stage.style.alignItems = "center";
-  stage.style.gridTemplateColumns = "";
-  stage.style.gridTemplateRows = "";
-
-  resetLayoutShellInlineStyles();
-
-  layoutShell.classList.remove("circle-shell", "single-shell");
-  layoutShell.classList.add(count >= 2 ? "grid-shell" : "single-shell");
-
-  layoutShell.style.position = "relative";
-  layoutShell.style.display = count === 1 ? "flex" : "grid";
-  layoutShell.style.justifyContent = "center";
-  layoutShell.style.alignContent = "center";
-  layoutShell.style.alignItems = "center";
-  layoutShell.style.margin = "0 auto";
-  layoutShell.style.width = "fit-content";
-  layoutShell.style.height = "fit-content";
-  layoutShell.style.maxWidth = "min(92vw, 1400px)";
-  layoutShell.style.padding = count === 1 ? "0px" : "30px";
-
   if (count === 1) {
-    layoutShell.style.gap = "0px";
-    layoutShell.style.gridTemplateColumns = "";
-    layoutShell.style.gridTemplateRows = "";
+    stage.style.display = "flex";
+    stage.style.justifyContent = "center";
+    stage.style.alignItems = "center";
+    stage.style.gridTemplateColumns = "";
+    stage.style.gridTemplateRows = "";
 
     participants.forEach((participant) => {
       const tile = participant.tile;
-
       resetTileForGrid(tile);
-
       tile.style.width = "min(72vw, 900px)";
       tile.style.maxWidth = "900px";
       tile.style.minWidth = "520px";
@@ -1058,20 +1036,22 @@ function applyGridLayout(count) {
     return;
   }
 
-  const cols = Math.min(5, Math.ceil(Math.sqrt(count)));
-  const rows = Math.min(5, Math.ceil(count / cols));
+  stage.style.display = "grid";
+  stage.style.justifyContent = "center";
+  stage.style.alignContent = "center";
+  stage.style.alignItems = "center";
 
-  layoutShell.style.gap = "24px";
-  layoutShell.style.gridTemplateColumns = `repeat(${cols}, minmax(220px, ${getTileMaxWidth(
+  const cols = Math.min(5, Math.ceil(Math.sqrt(count)));
+  const rows = Math.ceil(count / cols);
+
+  stage.style.gridTemplateColumns = `repeat(${cols}, minmax(220px, ${getTileMaxWidth(
     count
   )}px))`;
-  layoutShell.style.gridTemplateRows = `repeat(${rows}, auto)`;
+  stage.style.gridTemplateRows = `repeat(${rows}, auto)`;
 
   participants.forEach((participant) => {
     const tile = participant.tile;
-
     resetTileForGrid(tile);
-
     tile.style.width = "100%";
     tile.style.maxWidth = "";
     tile.style.minWidth = "180px";
@@ -1086,58 +1066,6 @@ function getTileMaxWidth(count) {
   return 210;
 }
 
-function getCircleBaseTileWidth(count, usableWidth, usableHeight) {
-  let base;
-
-  if (count <= 2) base = 180;
-  else if (count <= 3) base = 165;
-  else if (count <= 5) base = 155;
-  else if (count <= 8) base = 140;
-  else if (count <= 12) base = 126;
-  else if (count <= 16) base = 110;
-  else if (count <= 20) base = 96;
-  else base = 82;
-
-  const viewportLimit = Math.min(usableWidth / 3.8, usableHeight / 3.2);
-
-  return Math.min(base, viewportLimit);
-}
-
-function getCircleGap(count) {
-  if (count <= 3) return 46;
-  if (count <= 5) return 38;
-  if (count <= 8) return 30;
-  if (count <= 12) return 24;
-  if (count <= 16) return 18;
-  return 14;
-}
-
-function getTightRadius(count, tileW, gap) {
-  if (count <= 1) return 0;
-
-  return (tileW + gap) / (2 * Math.sin(Math.PI / count));
-}
-
-function getLowCountAngles(total) {
-  const top = -Math.PI / 2;
-
-  if (total === 2) {
-    return {
-      outer: [top],
-      inner: [top + Math.PI],
-    };
-  }
-
-  if (total === 3) {
-    return {
-      outer: [top - Math.PI / 3, top + Math.PI / 3],
-      inner: [top + Math.PI],
-    };
-  }
-
-  return null;
-}
-
 function applyCircleLayout() {
   stage.classList.remove("grid-mode");
   stage.classList.add("circle-mode");
@@ -1146,33 +1074,17 @@ function applyCircleLayout() {
   stage.style.gridTemplateColumns = "";
   stage.style.gridTemplateRows = "";
 
-  resetLayoutShellInlineStyles();
-
-  layoutShell.classList.remove("grid-shell", "single-shell");
-  layoutShell.classList.add("circle-shell");
-
-  layoutShell.style.position = "absolute";
-  layoutShell.style.left = "50%";
-  layoutShell.style.top = "50%";
-  layoutShell.style.transform = "translate(-50%, -50%)";
-  layoutShell.style.display = "block";
-  layoutShell.style.width = "min(78vw, 900px)";
-  layoutShell.style.height = "min(68vh, 720px)";
-  layoutShell.style.padding = "0";
-  layoutShell.style.margin = "0";
-  layoutShell.style.maxWidth = "none";
-
-  orbitAngle += 0.005;
+  orbitAngle += 0.0011;
 
   const users = Array.from(participants.values());
   const count = users.length;
   if (count === 0) return;
 
-  const rect = layoutShell.getBoundingClientRect();
+  const rect = stage.getBoundingClientRect();
 
-  const sideSafeArea = 42;
-  const topSafeArea = 34;
-  const bottomSafeArea = 34;
+  const sideSafeArea = 60;
+  const topSafeArea = 48;
+  const bottomSafeArea = 96;
 
   const usableWidth = rect.width - sideSafeArea * 2;
   const usableHeight = rect.height - topSafeArea - bottomSafeArea;
@@ -1184,102 +1096,46 @@ function applyCircleLayout() {
     (a, b) => (b.state.speakingMs || 0) - (a.state.speakingMs || 0)
   );
 
-  const outerCount = Math.ceil(count / 2);
-  const outerUsers = ranked.slice(0, outerCount);
-  const innerUsers = ranked.slice(outerCount);
+  let tileW;
 
-  const baseTileW = getCircleBaseTileWidth(count, usableWidth, usableHeight);
+  if (count <= 3) tileW = 170;
+  else if (count <= 5) tileW = 148;
+  else if (count <= 7) tileW = 130;
+  else if (count <= 9) tileW = 116;
+  else if (count <= 12) tileW = 102;
+  else tileW = 88;
 
-  if (count === 2 || count === 3) {
-    const outerTileW = clamp(baseTileW, 120, 190);
-    const innerTileW = clamp(baseTileW * 0.88, 105, 165);
+  tileW = Math.min(tileW, usableWidth / 5.5, usableHeight / 4.4);
+  tileW = clamp(tileW, 56, 170);
 
-    const outerTileH = outerTileW;
+  const gap = count <= 6 ? 18 : 14;
 
-    const maxOuterRadius = Math.min(
-      usableWidth / 2 - outerTileW / 2 - 24,
-      usableHeight / 2 - outerTileH / 2 - 24
-    );
+  const maxRadius =
+    Math.min(usableWidth, usableHeight) / 2 - tileW / 2 - 8;
 
-    const outerRadius = clamp(
-      Math.min(usableWidth, usableHeight) * 0.24,
-      170,
-      Math.min(maxOuterRadius, 360)
-    );
+  let radius = getSafeRingRadius(count, tileW, gap);
 
-    const innerRadius = clamp(outerRadius * 0.55, 88, outerRadius - 78);
-
-    const preset = getLowCountAngles(count);
-
-    positionCircleRing({
-      users: outerUsers,
-      centerX,
-      centerY,
-      radius: outerRadius,
-      tileW: outerTileW,
-      startAngle: orbitAngle,
-      ringClass: "outer-ring",
-      rotateTiles: true,
-      angleList: preset.outer.map((angle) => angle + orbitAngle),
-    });
-
-    positionCircleRing({
-      users: innerUsers,
-      centerX,
-      centerY,
-      radius: innerRadius,
-      tileW: innerTileW,
-      startAngle: orbitAngle,
-      ringClass: "inner-ring",
-      rotateTiles: true,
-      angleList: preset.inner.map((angle) => angle + orbitAngle),
-    });
-
-    return;
+  if (radius > maxRadius) {
+    const fittedTile =
+      (maxRadius * 2 * Math.sin(Math.PI / count)) - gap;
+    tileW = clamp(fittedTile, 52, tileW);
+    radius = getSafeRingRadius(count, tileW, gap);
   }
 
-  const outerTileW = clamp(baseTileW, 92, 170);
-  const innerTileW = clamp(baseTileW * 0.88, 78, 145);
-
-  const outerTileH = outerTileW;
-
-  const maxOuterRadius = Math.min(
-    usableWidth / 2 - outerTileW / 2 - 28,
-    usableHeight / 2 - outerTileH / 2 - 28
-  );
-
-  const outerRadius = clamp(
-    getTightRadius(outerUsers.length, outerTileW, getCircleGap(count)),
-    185,
-    Math.min(maxOuterRadius, 380)
-  );
-
-  const innerRadius = clamp(outerRadius * 0.56, 95, outerRadius - 82);
-
   positionCircleRing({
-    users: outerUsers,
+    users: ranked,
     centerX,
     centerY,
-    radius: outerRadius,
-    tileW: outerTileW,
+    radius,
+    tileW,
     startAngle: orbitAngle - Math.PI / 2,
-    ringClass: "outer-ring",
     rotateTiles: true,
   });
+}
 
-  positionCircleRing({
-    users: innerUsers,
-    centerX,
-    centerY,
-    radius: innerRadius,
-    tileW: innerTileW,
-    startAngle:
-      orbitAngle -
-      Math.PI / 2 +
-      Math.PI / Math.max(innerUsers.length, 1),
-    ringClass: "inner-ring",
-    rotateTiles: true,
-  });
+function getSafeRingRadius(count, tileW, gap) {
+  if (count <= 1) return 0;
+  return (tileW + gap) / (2 * Math.sin(Math.PI / count)) + 4;
 }
 
 function positionCircleRing({
@@ -1289,18 +1145,14 @@ function positionCircleRing({
   radius,
   tileW,
   startAngle,
-  ringClass,
   rotateTiles,
-  angleList = null,
 }) {
   if (!users.length) return;
 
   const tileH = tileW;
 
   users.forEach((participant, index) => {
-    const angle = angleList
-      ? angleList[index]
-      : startAngle + (Math.PI * 2 * index) / users.length;
+    const angle = startAngle + (Math.PI * 2 * index) / users.length;
 
     const x = centerX + Math.cos(angle) * radius - tileW / 2;
     const y = centerY + Math.sin(angle) * radius - tileH / 2;
@@ -1314,18 +1166,11 @@ function positionCircleRing({
     tile.style.height = `${tileH}px`;
     tile.style.minWidth = "0px";
     tile.style.maxWidth = "none";
-    tile.style.zIndex = ringClass === "inner-ring" ? "3" : "2";
+    tile.style.zIndex = "2";
 
     tile.style.transform = rotateTiles
       ? `rotate(${angle + Math.PI / 2}rad)`
       : "none";
-
-    tile.style.removeProperty("--x");
-    tile.style.removeProperty("--y");
-    tile.style.removeProperty("--tile-w");
-
-    tile.classList.remove("inner-ring", "outer-ring");
-    tile.classList.add(ringClass);
   });
 }
 
@@ -1342,7 +1187,6 @@ function applyVisualStates() {
       : participant.state;
 
     const tile = participant.tile;
-
     const isSpeakerTile =
       focusSpeakerId !== null && participant.id === focusSpeakerId;
 
@@ -1365,7 +1209,6 @@ function applyVisualStates() {
         "mouth-open",
         "turn-ready"
       );
-
       tile.classList.add("upright");
     } else {
       tile.classList.toggle("speaker", isSpeakerTile);
@@ -1428,7 +1271,6 @@ function maybeSendState() {
   if (now - lastStateSentAt < 120) return;
 
   lastStateSentAt = now;
-
   sendStateNow();
 }
 
@@ -1450,10 +1292,13 @@ function sendStateNow() {
   };
 
   try {
-    lkRoom.localParticipant.publishData(encoder.encode(JSON.stringify(message)), {
-      reliable: false,
-      topic: STATE_TOPIC,
-    });
+    lkRoom.localParticipant.publishData(
+      encoder.encode(JSON.stringify(message)),
+      {
+        reliable: false,
+        topic: STATE_TOPIC,
+      }
+    );
   } catch (error) {
     console.warn("publishData failed:", error);
   }

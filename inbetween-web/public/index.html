@@ -1,24 +1,42 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
     <title>InBetween</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="./style.css" />
   </head>
-
   <body>
+    <header class="topbar">
+      <div id="meetingTitle" class="meeting-title"></div>
+    </header>
+
     <main id="stage" class="stage grid-mode"></main>
 
-    <div class="controls-dock">
-      <button id="copyLinkBtn">Copy Invite Link</button>
-      <button id="circleToggleBtn" class="secondary">Circle Mode Off</button>
-      <button id="muteBtn">Mute</button>
-      <button id="cameraBtn">Camera Off</button>
-      <button id="leaveBtn" class="leave-button">Leave</button>
+    <div class="toolbar-shell">
+      <div class="toolbar">
+        <button id="copyLinkBtn" class="toolbar-btn primary" type="button">
+          Copy Invite Link
+        </button>
+        <button id="circleToggleBtn" class="toolbar-btn" type="button">
+          Circle Mode Off
+        </button>
+        <button id="muteBtn" class="toolbar-btn primary" type="button">
+          Mute
+        </button>
+        <button id="cameraBtn" class="toolbar-btn primary" type="button">
+          Camera Off
+        </button>
+        <button id="leaveBtn" class="toolbar-btn" type="button">
+          Leave
+        </button>
+      </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
-    <script src="/app.js"></script>
+    <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <script type="module" src="./app.js"></script>
   </body>
 </html>
