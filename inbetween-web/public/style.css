@@ -25,34 +25,42 @@ body {
   content: "";
   position: absolute;
   left: 50%;
-  top: 52%;
-  width: 72vw;
-  height: 58vh;
+  top: 50%;
+  width: min(78vw, 980px);
+  height: min(58vh, 620px);
   transform: translate(-50%, -50%);
   background:
     radial-gradient(
-      circle at 32% 34%,
-      rgba(184, 215, 255, 0.58),
+      circle at 28% 28%,
+      rgba(185, 216, 255, 0.72),
       transparent 34%
     ),
     radial-gradient(
-      circle at 68% 42%,
-      rgba(203, 242, 220, 0.5),
+      circle at 72% 32%,
+      rgba(205, 242, 222, 0.68),
       transparent 36%
     ),
     radial-gradient(
-      circle at 50% 74%,
-      rgba(255, 225, 174, 0.38),
-      transparent 38%
+      circle at 50% 78%,
+      rgba(255, 226, 176, 0.5),
+      transparent 42%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(218, 234, 255, 0.42),
+      rgba(221, 247, 232, 0.36),
+      rgba(255, 238, 203, 0.3)
     );
-  filter: blur(46px);
-  opacity: 0.62;
+  filter: blur(34px);
+  opacity: 0.72;
   pointer-events: none;
   z-index: 0;
+  border-radius: 42px;
   transition:
     width 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
     height 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 700ms ease,
+    filter 700ms ease,
     transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -60,20 +68,21 @@ body {
   content: "";
   position: absolute;
   left: 50%;
-  top: 54%;
-  width: 44vw;
-  height: 42vh;
+  top: 50%;
+  width: min(62vw, 760px);
+  height: min(42vh, 460px);
   transform: translate(-50%, -50%);
   background:
     radial-gradient(
       circle at center,
-      rgba(255, 255, 255, 0.76),
-      transparent 62%
+      rgba(255, 255, 255, 0.58),
+      transparent 64%
     );
-  filter: blur(30px);
-  opacity: 0.88;
+  filter: blur(22px);
+  opacity: 0.86;
   pointer-events: none;
   z-index: 0;
+  border-radius: 36px;
 }
 
 .stage.grid-mode {
@@ -85,16 +94,18 @@ body {
   justify-content: center;
 }
 
+/* Grid mode: rounded rectangle color panel behind tiles */
 .stage.grid-mode::before {
-  width: 76vw;
-  height: 56vh;
-  opacity: 0.52;
-  transform: translate(-50%, -48%) scale(1);
+  width: min(82vw, 1040px);
+  height: min(62vh, 660px);
+  opacity: 0.82;
+  transform: translate(-50%, -50%) scale(1);
+  filter: blur(28px);
 }
 
 .stage.grid-mode::after {
-  width: 50vw;
-  height: 44vh;
+  width: min(64vw, 780px);
+  height: min(46vh, 480px);
   opacity: 0.82;
 }
 
@@ -102,16 +113,18 @@ body {
   display: block;
 }
 
+/* Circle mode: more concentrated glow */
 .stage.circle-mode::before {
-  width: 50vw;
-  height: 52vh;
+  width: min(52vw, 680px);
+  height: min(54vh, 560px);
   opacity: 0.82;
   transform: translate(-50%, -50%) scale(1.06);
+  filter: blur(42px);
 }
 
 .stage.circle-mode::after {
-  width: 30vw;
-  height: 34vh;
+  width: min(32vw, 420px);
+  height: min(36vh, 360px);
   opacity: 0.72;
 }
 
