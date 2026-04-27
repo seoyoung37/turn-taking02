@@ -11,18 +11,16 @@ let FilesetResolver;
 console.log("app.js loaded - LiveKit version");
 
 const stage = document.getElementById("stage");
-const roomInput = document.getElementById("roomInput");
 const muteBtn = document.getElementById("muteBtn");
 const cameraBtn = document.getElementById("cameraBtn");
 const copyLinkBtn = document.getElementById("copyLinkBtn");
 const circleToggleBtn = document.getElementById("circleToggleBtn");
+const leaveBtn = document.getElementById("leaveBtn");
 
 const url = new URL(window.location.href);
 const roomId = url.searchParams.get("room") || "studio";
 
-if (roomInput) {
-  roomInput.value = roomId;
-}
+
 
 let displayName =
   localStorage.getItem("inbetween-name") ||
@@ -54,6 +52,8 @@ let noSpeakerMode = false;
 let circleModeEnabled = false;
 let circleModeEnabledAt = null;
 let orbitAngle = 0;
+
+let hasLeftRoom = false;
 
 let lastStateSentAt = 0;
 let lastSpeakingTick = Date.now();
@@ -635,6 +635,64 @@ function setupButtons() {
       sendStateNow();
     });
   }
+
+  if (leaveBtn) {
+    leaveBtn.addEventListener("click", leaveRoom);
+  }
+}
+
+async function leaveRoom() {
+  if (hasLeftRoom) return;
+
+  hasLeftRoom = true;
+
+  try {
+    if (lkRoom && lkRoom.localParticipant) {
+      await lkRoom.localParticipant.setCameraEnabled(false).catch(() => {});
+      await lkRoom.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+    }
+
+    if (lkRoom) {
+      lkRoom.disconnect();
+    }
+  } catch (error) {
+    console.warn("Leave room error:", error);
+  }
+
+  if (audioContext) {
+    audioContext.close().catch(() => {});
+    audioContext = null;
+  }
+
+  participants.forEach((participant) => {
+    participant.tile.remove();
+  });
+
+  participants.clear();
+
+  activeSpeakerId = null;
+  heldSpeakerId = null;
+  noSpeakerMode = false;
+
+  stage.classList.remove("grid-mode", "circle-mode");
+  stage.innerHTML = "";
+
+  const message = document.createElement("div");
+  message.className = "leave-message";
+  message.textContent = "You left the room.";
+
+  stage.appendChild(message);
+
+  [muteBtn, cameraBtn, circleToggleBtn, copyLinkBtn].forEach((button) => {
+    if (button) {
+      button.disabled = true;
+    }
+  });
+
+  if (leaveBtn) {
+    leaveBtn.textContent = "Left";
+    leaveBtn.disabled = true;
+  }
 }
 
 async function setupFaceLandmarker() {
@@ -663,6 +721,8 @@ async function setupFaceLandmarker() {
 }
 
 function loop() {
+  if (hasLeftRoom) return;
+  
   analyzeLocalAudio();
   analyzeLocalFace();
   updateConversationState();

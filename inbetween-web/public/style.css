@@ -243,3 +243,23 @@ body {
     0 0 0 1px rgba(255, 211, 110, 0.45),
     0 8px 20px rgba(0, 0, 0, 0.07);
 }
+
+.controls-dock button.leave-button {
+  background: #efefef;
+  color: #111;
+}
+
+.controls-dock button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.leave-message {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #111;
+  font-size: 18px;
+  font-weight: 600;
+}
