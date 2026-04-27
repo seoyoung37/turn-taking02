@@ -29,6 +29,11 @@ localStorage.setItem("inbetween-name", displayName);
 
 const clientIdentity = `${displayName}-${crypto.randomUUID().slice(0, 8)}`;
 
+const layoutShell = document.createElement("div");
+layoutShell.id = "layoutShell";
+layoutShell.className = "layout-shell single-shell";
+stage.appendChild(layoutShell);
+
 let lkRoom = null;
 let myId = null;
 let localVideoEl = null;
@@ -311,7 +316,7 @@ function addParticipant({ id, name, isLocal }) {
   tile.appendChild(nameTag);
   tile.appendChild(cue);
 
-  stage.appendChild(tile);
+  layoutShell.appendChild(tile);
 
   participants.set(id, {
     id,
@@ -673,7 +678,9 @@ async function leaveRoom() {
   noSpeakerMode = false;
 
   stage.classList.remove("grid-mode", "circle-mode");
-  stage.innerHTML = "";
+  layoutShell.classList.remove("grid-shell", "circle-shell");
+  layoutShell.classList.add("single-shell");
+  layoutShell.innerHTML = "";
 
   const message = document.createElement("div");
   message.className = "leave-message";
@@ -988,16 +995,55 @@ function resetTileForGrid(tile) {
   tile.classList.remove("inner-ring", "outer-ring");
 }
 
+function resetLayoutShellInlineStyles() {
+  layoutShell.style.position = "";
+  layoutShell.style.left = "";
+  layoutShell.style.top = "";
+  layoutShell.style.transform = "";
+  layoutShell.style.width = "";
+  layoutShell.style.height = "";
+  layoutShell.style.maxWidth = "";
+  layoutShell.style.padding = "";
+  layoutShell.style.margin = "";
+  layoutShell.style.display = "";
+  layoutShell.style.gridTemplateColumns = "";
+  layoutShell.style.gridTemplateRows = "";
+  layoutShell.style.gap = "";
+  layoutShell.style.justifyContent = "";
+  layoutShell.style.alignContent = "";
+  layoutShell.style.alignItems = "";
+}
+
 function applyGridLayout(count) {
   stage.classList.add("grid-mode");
   stage.classList.remove("circle-mode");
 
+  stage.style.display = "flex";
+  stage.style.justifyContent = "center";
+  stage.style.alignItems = "center";
+  stage.style.gridTemplateColumns = "";
+  stage.style.gridTemplateRows = "";
+
+  resetLayoutShellInlineStyles();
+
+  layoutShell.classList.remove("circle-shell", "single-shell");
+  layoutShell.classList.add(count >= 2 ? "grid-shell" : "single-shell");
+
+  layoutShell.style.position = "relative";
+  layoutShell.style.display = count === 1 ? "flex" : "grid";
+  layoutShell.style.justifyContent = "center";
+  layoutShell.style.alignContent = "center";
+  layoutShell.style.alignItems = "center";
+  layoutShell.style.margin = "0 auto";
+  layoutShell.style.width = "fit-content";
+  layoutShell.style.height = "fit-content";
+  layoutShell.style.maxWidth = "min(92vw, 1400px)";
+  layoutShell.style.padding = count === 1 ? "0px" : "30px";
+
   if (count === 1) {
-    stage.style.display = "flex";
-    stage.style.justifyContent = "center";
-    stage.style.alignItems = "center";
-    stage.style.gridTemplateColumns = "";
-    stage.style.gridTemplateRows = "";
+    layoutShell.style.gap = "0px";
+    layoutShell.style.gridTemplateColumns = "";
+    layoutShell.style.gridTemplateRows = "";
 
     participants.forEach((participant) => {
       const tile = participant.tile;
@@ -1012,19 +1058,14 @@ function applyGridLayout(count) {
     return;
   }
 
-  stage.style.display = "grid";
-  stage.style.justifyContent = "center";
-  stage.style.alignContent = "center";
-  stage.style.alignItems = "center";
-
   const cols = Math.min(5, Math.ceil(Math.sqrt(count)));
   const rows = Math.min(5, Math.ceil(count / cols));
 
-  stage.style.gridTemplateColumns = `repeat(${cols}, minmax(220px, ${getTileMaxWidth(
+  layoutShell.style.gap = "24px";
+  layoutShell.style.gridTemplateColumns = `repeat(${cols}, minmax(220px, ${getTileMaxWidth(
     count
   )}px))`;
-
-  stage.style.gridTemplateRows = `repeat(${rows}, auto)`;
+  layoutShell.style.gridTemplateRows = `repeat(${rows}, auto)`;
 
   participants.forEach((participant) => {
     const tile = participant.tile;
@@ -1105,17 +1146,33 @@ function applyCircleLayout() {
   stage.style.gridTemplateColumns = "";
   stage.style.gridTemplateRows = "";
 
+  resetLayoutShellInlineStyles();
+
+  layoutShell.classList.remove("grid-shell", "single-shell");
+  layoutShell.classList.add("circle-shell");
+
+  layoutShell.style.position = "absolute";
+  layoutShell.style.left = "50%";
+  layoutShell.style.top = "50%";
+  layoutShell.style.transform = "translate(-50%, -50%)";
+  layoutShell.style.display = "block";
+  layoutShell.style.width = "min(78vw, 900px)";
+  layoutShell.style.height = "min(68vh, 720px)";
+  layoutShell.style.padding = "0";
+  layoutShell.style.margin = "0";
+  layoutShell.style.maxWidth = "none";
+
   orbitAngle += 0.005;
 
   const users = Array.from(participants.values());
   const count = users.length;
   if (count === 0) return;
 
-  const rect = stage.getBoundingClientRect();
+  const rect = layoutShell.getBoundingClientRect();
 
-  const sideSafeArea = 64;
-  const topSafeArea = 42;
-  const bottomSafeArea = 136;
+  const sideSafeArea = 42;
+  const topSafeArea = 34;
+  const bottomSafeArea = 34;
 
   const usableWidth = rect.width - sideSafeArea * 2;
   const usableHeight = rect.height - topSafeArea - bottomSafeArea;
@@ -1145,7 +1202,7 @@ function applyCircleLayout() {
     );
 
     const outerRadius = clamp(
-      Math.min(usableWidth, usableHeight) * 0.22,
+      Math.min(usableWidth, usableHeight) * 0.24,
       170,
       Math.min(maxOuterRadius, 360)
     );
@@ -1312,11 +1369,8 @@ function applyVisualStates() {
       tile.classList.add("upright");
     } else {
       tile.classList.toggle("speaker", isSpeakerTile);
-
       tile.classList.toggle("upright", isSpeakerTile || singleParticipant);
-
       tile.classList.toggle("flat", !isSpeakerTile && !singleParticipant);
-
       tile.classList.toggle("turn-ready", mouthReady);
       tile.classList.toggle("mouth-open", mouthReady);
       tile.classList.toggle("gazing", gazeReady);

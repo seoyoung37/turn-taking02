@@ -18,114 +18,124 @@ body {
   overflow: hidden;
   perspective: 1200px;
   isolation: isolate;
-}
-
-/* Blurry gradient background */
-.stage::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(78vw, 980px);
-  height: min(58vh, 620px);
-  transform: translate(-50%, -50%);
-  background:
-    radial-gradient(
-      circle at 28% 28%,
-      rgba(185, 216, 255, 0.72),
-      transparent 34%
-    ),
-    radial-gradient(
-      circle at 72% 32%,
-      rgba(205, 242, 222, 0.68),
-      transparent 36%
-    ),
-    radial-gradient(
-      circle at 50% 78%,
-      rgba(255, 226, 176, 0.5),
-      transparent 42%
-    ),
-    linear-gradient(
-      135deg,
-      rgba(218, 234, 255, 0.42),
-      rgba(221, 247, 232, 0.36),
-      rgba(255, 238, 203, 0.3)
-    );
-  filter: blur(34px);
-  opacity: 0.72;
-  pointer-events: none;
-  z-index: 0;
-  border-radius: 42px;
-  transition:
-    width 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    height 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 700ms ease,
-    filter 700ms ease,
-    transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.stage::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(62vw, 760px);
-  height: min(42vh, 460px);
-  transform: translate(-50%, -50%);
-  background:
-    radial-gradient(
-      circle at center,
-      rgba(255, 255, 255, 0.58),
-      transparent 64%
-    );
-  filter: blur(22px);
-  opacity: 0.86;
-  pointer-events: none;
-  z-index: 0;
-  border-radius: 36px;
-}
-
-.stage.grid-mode {
-  display: grid;
-  gap: clamp(16px, 2vw, 28px);
-  padding: clamp(24px, 3vw, 48px);
-  place-content: center;
-  align-content: center;
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
-/* Grid mode: rounded rectangle color panel behind tiles */
-.stage.grid-mode::before {
-  width: min(82vw, 1040px);
-  height: min(62vh, 660px);
-  opacity: 0.82;
-  transform: translate(-50%, -50%) scale(1);
-  filter: blur(28px);
-}
-
-.stage.grid-mode::after {
-  width: min(64vw, 780px);
-  height: min(46vh, 480px);
-  opacity: 0.82;
+.stage.grid-mode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .stage.circle-mode {
   display: block;
 }
 
-/* Circle mode: more concentrated glow */
-.stage.circle-mode::before {
-  width: min(52vw, 680px);
-  height: min(54vh, 560px);
-  opacity: 0.82;
-  transform: translate(-50%, -50%) scale(1.06);
-  filter: blur(42px);
+.layout-shell {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  overflow: visible;
 }
 
-.stage.circle-mode::after {
-  width: min(32vw, 420px);
-  height: min(36vh, 360px);
-  opacity: 0.72;
+.layout-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 36px;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 400ms ease,
+    transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 500ms ease;
+}
+
+.layout-shell::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 28px;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 400ms ease,
+    transform 500ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 500ms ease;
+}
+
+.single-shell::before,
+.single-shell::after {
+  opacity: 0;
+}
+
+.grid-shell::before {
+  opacity: 1;
+  background:
+    radial-gradient(
+      circle at 28% 26%,
+      rgba(186, 218, 255, 0.84),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 74% 30%,
+      rgba(202, 242, 220, 0.8),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at 50% 78%,
+      rgba(255, 232, 186, 0.66),
+      transparent 42%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(225, 236, 255, 0.72),
+      rgba(226, 245, 233, 0.62),
+      rgba(255, 240, 214, 0.54)
+    );
+  filter: blur(22px);
+  transform: scale(1.035);
+}
+
+.grid-shell::after {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.34);
+  filter: blur(12px);
+  transform: scale(1);
+}
+
+.circle-shell::before {
+  opacity: 1;
+  background:
+    radial-gradient(
+      circle at 30% 30%,
+      rgba(186, 218, 255, 0.82),
+      transparent 36%
+    ),
+    radial-gradient(
+      circle at 72% 34%,
+      rgba(202, 242, 220, 0.75),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 50% 76%,
+      rgba(255, 232, 186, 0.56),
+      transparent 44%
+    );
+  filter: blur(34px);
+  transform: scale(1.08);
+  border-radius: 999px;
+}
+
+.circle-shell::after {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+  filter: blur(16px);
+  border-radius: 999px;
 }
 
 /* Controls */
