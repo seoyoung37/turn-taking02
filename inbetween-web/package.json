@@ -1,7 +1,7 @@
 {
   "name": "inbetween-web",
   "version": "1.0.0",
-  "description": "InBetween real-time video conference prototype",
+  "description": "InBetween LiveKit video conference prototype",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

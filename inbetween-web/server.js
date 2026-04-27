@@ -8,7 +8,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
-
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/health", (req, res) => {
@@ -16,10 +15,12 @@ app.get("/health", (req, res) => {
 });
 
 function sanitizeRoomName(value) {
-  return String(value || "studio")
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]/g, "-")
-    .slice(0, 64) || "studio";
+  return (
+    String(value || "studio")
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, "-")
+      .slice(0, 64) || "studio"
+  );
 }
 
 function sanitizeName(value) {
