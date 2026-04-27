@@ -54,7 +54,7 @@ body {
 
 .stage {
   position: fixed;
-  inset: 68px 36px 104px 36px;
+  inset: 48px 32px 84px 32px;
   display: grid;
   justify-content: center;
   align-content: center;
@@ -304,7 +304,7 @@ body {
   border-radius: 999px;
 
   background: #fbfbf9;
-  color: #141414;
+  color: #9f9f9f;
 
   font-size: 13px;
   font-weight: 650;
@@ -390,5 +390,3 @@ body {
     font-size: 11px;
   }
 }
-
-

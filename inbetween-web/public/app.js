@@ -1029,9 +1029,15 @@ function applyGridLayout(count) {
     participants.forEach((participant) => {
       const tile = participant.tile;
       resetTileForGrid(tile);
-      tile.style.width = "min(72vw, 900px)";
-      tile.style.maxWidth = "900px";
-      tile.style.minWidth = "520px";
+
+      /*
+        한 명일 때 화면 크게.
+        기존: min(72vw, 900px)
+        변경: min(82vw, 1180px)
+      */
+      tile.style.width = "min(82vw, 1180px)";
+      tile.style.maxWidth = "1180px";
+      tile.style.minWidth = "640px";
     });
 
     return;
@@ -1045,7 +1051,7 @@ function applyGridLayout(count) {
   const cols = Math.min(5, Math.ceil(Math.sqrt(count)));
   const rows = Math.ceil(count / cols);
 
-  stage.style.gridTemplateColumns = `repeat(${cols}, minmax(220px, ${getTileMaxWidth(
+  stage.style.gridTemplateColumns = `repeat(${cols}, minmax(260px, ${getTileMaxWidth(
     count
   )}px))`;
   stage.style.gridTemplateRows = `repeat(${rows}, auto)`;
@@ -1055,16 +1061,20 @@ function applyGridLayout(count) {
     resetTileForGrid(tile);
     tile.style.width = "100%";
     tile.style.maxWidth = "";
-    tile.style.minWidth = "180px";
+    tile.style.minWidth = "240px";
   });
 }
 
 function getTileMaxWidth(count) {
-  if (count <= 2) return 560;
-  if (count <= 4) return 420;
-  if (count <= 9) return 320;
-  if (count <= 16) return 250;
-  return 210;
+  /*
+    여러 명일 때도 각 화면을 더 크게.
+  */
+  if (count <= 2) return 680;
+  if (count <= 4) return 540;
+  if (count <= 6) return 460;
+  if (count <= 9) return 390;
+  if (count <= 16) return 310;
+  return 260;
 }
 
 function applyCircleLayout() {
