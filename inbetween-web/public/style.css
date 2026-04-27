@@ -1,13 +1,13 @@
 :root {
-  --bg: #ecece9;
+  --bg: #ffffff;
   --panel: #f4f4f1;
   --text: #111111;
   --muted: #707070;
   --line: #d8d7d1;
   --accent: #e1a43a;
-  --shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.07);
+  /*--shadow-soft: 0 14px 32px rgba(0, 0, 0, 0.07);
   --shadow-card: 0 10px 24px rgba(0, 0, 0, 0.08);
-  --shadow-toolbar: 0 12px 22px rgba(0, 0, 0, 0.06);
+  --shadow-toolbar: 0 12px 22px rgba(0, 0, 0, 0.06);*/
 }
 
 * {
