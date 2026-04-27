@@ -20,8 +20,6 @@ const leaveBtn = document.getElementById("leaveBtn");
 const url = new URL(window.location.href);
 const roomId = url.searchParams.get("room") || "studio";
 
-
-
 let displayName =
   localStorage.getItem("inbetween-name") ||
   prompt("Your name?") ||
@@ -171,6 +169,7 @@ async function init() {
 
     attachLocalMediaTracks();
     setupAudioAnalyzer();
+
     setupFaceLandmarker()
       .then(() => {
         console.log("FaceLandmarker ready");
@@ -433,7 +432,6 @@ function findParticipantTrack(participant, source) {
 
 function getMediaStreamTrack(livekitTrack) {
   return (
-    livekitTrack?.mediaStreamTrack ||
     livekitTrack?.mediaStreamTrack ||
     livekitTrack?._mediaStreamTrack ||
     null
@@ -722,7 +720,7 @@ async function setupFaceLandmarker() {
 
 function loop() {
   if (hasLeftRoom) return;
-  
+
   analyzeLocalAudio();
   analyzeLocalFace();
   updateConversationState();
@@ -890,10 +888,6 @@ function detectGazingAtSpeaker(landmarks) {
   lookX = clamp(lookX, -1, 1);
   lookY = clamp(lookY, -1, 1);
 
-  /*
-    speaker가 화면 중앙 근처에 있으면,
-    사용자가 정면을 보고 있는 것만으로도 gazingSpeaker로 인정.
-  */
   if (targetLength < 0.28) {
     return Math.abs(lookX) < 0.62 && Math.abs(lookY) < 0.72;
   }
@@ -1054,25 +1048,27 @@ function getTileMaxWidth(count) {
 function getCircleBaseTileWidth(count, usableWidth, usableHeight) {
   let base;
 
-  if (count <= 2) base = 130;
-  else if (count <= 3) base = 118;
-  else if (count <= 5) base = 110;
-  else if (count <= 8) base = 96;
-  else if (count <= 12) base = 84;
-  else if (count <= 16) base = 72;
-  else if (count <= 20) base = 64;
-  else base = 56;
+  if (count <= 2) base = 180;
+  else if (count <= 3) base = 165;
+  else if (count <= 5) base = 155;
+  else if (count <= 8) base = 140;
+  else if (count <= 12) base = 126;
+  else if (count <= 16) base = 110;
+  else if (count <= 20) base = 96;
+  else base = 82;
 
-  const viewportLimit = Math.min(usableWidth / 5.2, usableHeight / 4.5);
+  const viewportLimit = Math.min(usableWidth / 3.8, usableHeight / 3.2);
+
   return Math.min(base, viewportLimit);
 }
 
 function getCircleGap(count) {
-  if (count <= 3) return 38;
-  if (count <= 5) return 30;
-  if (count <= 8) return 20;
-  if (count <= 12) return 12;
-  return 8;
+  if (count <= 3) return 46;
+  if (count <= 5) return 38;
+  if (count <= 8) return 30;
+  if (count <= 12) return 24;
+  if (count <= 16) return 18;
+  return 14;
 }
 
 function getTightRadius(count, tileW, gap) {
@@ -1117,9 +1113,9 @@ function applyCircleLayout() {
 
   const rect = stage.getBoundingClientRect();
 
-  const sideSafeArea = 48;
-  const topSafeArea = 38;
-  const bottomSafeArea = 132;
+  const sideSafeArea = 64;
+  const topSafeArea = 42;
+  const bottomSafeArea = 136;
 
   const usableWidth = rect.width - sideSafeArea * 2;
   const usableHeight = rect.height - topSafeArea - bottomSafeArea;
@@ -1138,8 +1134,8 @@ function applyCircleLayout() {
   const baseTileW = getCircleBaseTileWidth(count, usableWidth, usableHeight);
 
   if (count === 2 || count === 3) {
-    const outerTileW = clamp(baseTileW, 86, 132);
-    const innerTileW = clamp(baseTileW * 0.86, 72, 112);
+    const outerTileW = clamp(baseTileW, 120, 190);
+    const innerTileW = clamp(baseTileW * 0.88, 105, 165);
 
     const outerTileH = outerTileW * 0.5625;
 
@@ -1149,12 +1145,12 @@ function applyCircleLayout() {
     );
 
     const outerRadius = clamp(
-      Math.min(usableWidth, usableHeight) * 0.2,
-      126,
-      Math.min(maxOuterRadius, 210)
+      Math.min(usableWidth, usableHeight) * 0.22,
+      170,
+      Math.min(maxOuterRadius, 360)
     );
 
-    const innerRadius = clamp(outerRadius * 0.48, 58, outerRadius - 66);
+    const innerRadius = clamp(outerRadius * 0.55, 88, outerRadius - 78);
 
     const preset = getLowCountAngles(count);
 
@@ -1185,23 +1181,23 @@ function applyCircleLayout() {
     return;
   }
 
-  const outerTileW = clamp(baseTileW, 54, 116);
-  const innerTileW = clamp(baseTileW * 0.82, 44, 94);
+  const outerTileW = clamp(baseTileW, 92, 170);
+  const innerTileW = clamp(baseTileW * 0.88, 78, 145);
 
   const outerTileH = outerTileW * 0.5625;
 
   const maxOuterRadius = Math.min(
-    usableWidth / 2 - outerTileW / 2 - 24,
-    usableHeight / 2 - outerTileH / 2 - 24
+    usableWidth / 2 - outerTileW / 2 - 28,
+    usableHeight / 2 - outerTileH / 2 - 28
   );
 
   const outerRadius = clamp(
     getTightRadius(outerUsers.length, outerTileW, getCircleGap(count)),
-    128,
-    Math.min(maxOuterRadius, 250)
+    185,
+    Math.min(maxOuterRadius, 380)
   );
 
-  const innerRadius = clamp(outerRadius * 0.55, 62, outerRadius - 58);
+  const innerRadius = clamp(outerRadius * 0.56, 95, outerRadius - 82);
 
   positionCircleRing({
     users: outerUsers,
@@ -1281,10 +1277,6 @@ function applyVisualStates() {
   const focusSpeakerId = getFocusSpeakerId();
 
   participants.forEach((participant) => {
-    /*
-      local participant는 participant.state보다 localState가 더 최신임.
-      그래서 local tile은 localState를 직접 기준으로 판단해야 효과가 바로 보임.
-    */
     const state = participant.isLocal
       ? {
           ...participant.state,
@@ -1297,12 +1289,6 @@ function applyVisualStates() {
     const isSpeakerTile =
       focusSpeakerId !== null && participant.id === focusSpeakerId;
 
-    /*
-      핵심:
-      speaker가 아닌 사람에게만 pre-speech cue 적용.
-      muted이면 적용 안 됨.
-      noSpeakerMode에서도 적용 안 됨.
-    */
     const canShowPreSpeechCue =
       !singleParticipant &&
       !noSpeakerMode &&
@@ -1327,15 +1313,9 @@ function applyVisualStates() {
     } else {
       tile.classList.toggle("speaker", isSpeakerTile);
 
-      tile.classList.toggle(
-        "upright",
-        isSpeakerTile || singleParticipant
-      );
+      tile.classList.toggle("upright", isSpeakerTile || singleParticipant);
 
-      tile.classList.toggle(
-        "flat",
-        !isSpeakerTile && !singleParticipant
-      );
+      tile.classList.toggle("flat", !isSpeakerTile && !singleParticipant);
 
       tile.classList.toggle("turn-ready", mouthReady);
       tile.classList.toggle("mouth-open", mouthReady);
